@@ -40,15 +40,26 @@ export function PitchModule({ state }: PitchModuleProps) {
 
   const getCentsIndicator = () => {
     const cents = displayPitch?.cents ?? 0;
-    if (Math.abs(cents) < 5) {
-      return <span className="text-green-600 font-bold">●</span>;
-    } else if (cents < 0) {
-      return <ChevronLeft className="h-5 w-5 text-orange-600" />;
-    } else {
-      return <ChevronRight className="h-5 w-5 text-orange-600" />;
+    const abs = Math.abs(cents);
+    const color =
+      abs <= 10 ? 'text-green-600' : abs <= 25 ? 'text-amber-600' : 'text-red-600';
+    if (abs < 5) {
+      return <span className={`font-bold ${color}`}>●</span>;
     }
+    if (cents < 0) {
+      return <ChevronLeft className={`h-5 w-5 ${color}`} />;
+    }
+    return <ChevronRight className={`h-5 w-5 ${color}`} />;
   };
 
+  const getDeviationColor = () => {
+    const cents = displayPitch?.cents;
+    if (cents === undefined) return 'text-slate-400';
+    const abs = Math.abs(cents);
+    if (abs <= 10) return 'text-green-600';
+    if (abs <= 25) return 'text-amber-600';
+    return 'text-red-600';
+  };
   return (
     <Card>
       <CardHeader>
@@ -71,7 +82,7 @@ export function PitchModule({ state }: PitchModuleProps) {
           </div>
           <div className="text-center">
             <div className="text-xs text-muted-foreground">Deviation</div>
-            <div className={`text-4xl font-bold ${displayPitch?.cents !== undefined && Math.abs(displayPitch.cents) < 10 ? 'text-green-600' : 'text-orange-600'}`}>
+            <div className={`text-4xl font-bold ${getDeviationColor()}`}>
               {displayPitch?.cents !== undefined
                 ? `${displayPitch.cents > 0 ? '+' : ''}${displayPitch.cents}¢`
                 : '—'}
@@ -94,3 +105,6 @@ export function PitchModule({ state }: PitchModuleProps) {
     </Card>
   );
 }
+
+
+

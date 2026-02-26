@@ -750,7 +750,17 @@ export default function Home() {
 
               <div className="bg-white rounded-lg border border-slate-200 p-6">
                 <div className="text-xs text-slate-500 mb-2">Scale Meter</div>
-                <div className="text-4xl font-semibold">
+                <div
+                  className={`text-4xl font-semibold ${
+                    engineState?.scaleMatch !== undefined
+                      ? Math.round(engineState.scaleMatch * 100) >= 80
+                        ? 'text-green-600'
+                        : Math.round(engineState.scaleMatch * 100) >= 60
+                          ? 'text-amber-500'
+                          : 'text-red-600'
+                      : 'text-slate-400'
+                  }`}
+                >
                   {engineState?.scaleMatch !== undefined
                     ? `${Math.round(engineState.scaleMatch * 100)}%`
                     : '—'}
@@ -765,7 +775,17 @@ export default function Home() {
 
               <div className="bg-white rounded-lg border border-slate-200 p-6">
                 <div className="text-xs text-slate-500 mb-2">Dynamic Range</div>
-                <div className="text-center text-5xl font-bold text-slate-700">
+                <div
+                  className={`text-center text-5xl font-bold ${
+                    engineState?.dynamicRangeDb !== undefined
+                      ? engineState.dynamicRangeDb < 6
+                        ? 'text-amber-600'
+                        : engineState.dynamicRangeDb < 12
+                          ? 'text-green-600'
+                          : 'text-red-600'
+                      : 'text-slate-400'
+                  }`}
+                >
                   {engineState?.dynamicRangeDb !== undefined
                     ? engineState.dynamicRangeDb < 6
                       ? 'Too flat'
@@ -783,7 +803,17 @@ export default function Home() {
 
               <div className="bg-white rounded-lg border border-slate-200 p-6">
                 <div className="text-xs text-slate-500 mb-2">Breathiness</div>
-                <div className="text-center text-5xl font-semibold">
+                <div
+                  className={`text-center text-5xl font-semibold ${
+                    engineState?.breathiness !== undefined
+                      ? engineState.breathiness < 0.3
+                        ? 'text-green-600'
+                        : engineState.breathiness < 0.6
+                          ? 'text-amber-600'
+                          : 'text-red-600'
+                      : 'text-slate-400'
+                  }`}
+                >
                   {engineState?.breathiness !== undefined
                     ? engineState.breathiness < 0.3
                       ? 'Clean'

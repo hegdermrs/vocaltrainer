@@ -14,13 +14,8 @@ export function AirflowModule({ state }: AirflowModuleProps) {
   const getQualityColor = (value: number) => {
     if (value < 30) return 'text-green-600';
     if (value < 60) return 'text-amber-600';
-    return 'text-orange-600';
-  };
-
-  const getBarColor = (value: number) => {
-    if (value < 30) return 'bg-green-600';
-    if (value < 60) return 'bg-amber-500';
-    return 'bg-orange-500';
+    if (value < 80) return 'text-orange-600';
+    return 'text-red-600';
   };
 
   return (

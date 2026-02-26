@@ -24,7 +24,7 @@ export function DynamicRangeModule({ state }: DynamicRangeModuleProps) {
     if (rangeDb === undefined) return 'text-slate-400';
     if (rangeDb < 6) return 'text-amber-600';
     if (rangeDb < 12) return 'text-green-600';
-    return 'text-orange-600';
+    return 'text-red-600';
   };
 
   return (
