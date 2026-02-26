@@ -69,7 +69,7 @@ function getStatus(cents: number | null, tolerance: number) {
 export function TargetTrainerModule({ state }: TargetTrainerModuleProps) {
   const [scaleId, setScaleId] = useState<ScaleId>('c-major');
   const [targetNote, setTargetNote] = useState<NoteName>('A4');
-  const [tolerance, setTolerance] = useState<number>(15);
+  const [tolerance, setTolerance] = useState<number>(50);
 
   const availableNotes = useMemo(() => {
     const scale = SCALES.find(s => s.id === scaleId);
@@ -145,7 +145,7 @@ export function TargetTrainerModule({ state }: TargetTrainerModuleProps) {
             value={[tolerance]}
             onValueChange={([v]) => setTolerance(v)}
             min={5}
-            max={50}
+            max={100}
             step={1}
           />
         </div>
@@ -178,4 +178,3 @@ export function TargetTrainerModule({ state }: TargetTrainerModuleProps) {
     </Card>
   );
 }
-

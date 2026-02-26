@@ -58,11 +58,8 @@ export function InputLevelMeter({ analyserNode, isActive }: InputLevelMeterProps
           <span className="font-medium text-slate-700">Input Level</span>
           <span className="text-slate-600">{level.toFixed(0)}%</span>
         </div>
-        <div className="relative w-full h-4 bg-slate-200 rounded-full overflow-hidden">
-          <div
-            className={`h-full transition-all duration-75 ${getColorClass()}`}
-            style={{ width: `${level}%` }}
-          />
+        <div className="text-center text-4xl font-bold tabular-nums text-slate-700">
+          {level.toFixed(0)}%
         </div>
         {!isActive && (
           <p className="text-xs text-slate-500 text-center">

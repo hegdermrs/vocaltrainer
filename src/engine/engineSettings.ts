@@ -3,6 +3,7 @@ export interface EngineSettings {
   pitchConfidenceThreshold: number;
   centsTolerance: number;
   smoothingAmount: number;
+  scaleId: string;
   modules: {
     pitch: boolean;
     stability: boolean;
@@ -12,32 +13,38 @@ export interface EngineSettings {
   };
 }
 
-export type EnginePreset = 'quiet' | 'noisy' | 'whisper' | 'belting';
+export type EnginePreset = 'quiet' | 'noisy' | 'whisper' | 'belting' | 'iphone';
 
 const PRESETS: Record<EnginePreset, Partial<EngineSettings>> = {
   quiet: {
     noiseGateRMS: 0.0015,
     pitchConfidenceThreshold: 0.5,
-    centsTolerance: 35,
+    centsTolerance: 50,
     smoothingAmount: 0.3
   },
   noisy: {
     noiseGateRMS: 0.0035,
     pitchConfidenceThreshold: 0.6,
-    centsTolerance: 40,
+    centsTolerance: 50,
     smoothingAmount: 0.5
   },
   whisper: {
     noiseGateRMS: 0.001,
     pitchConfidenceThreshold: 0.55,
-    centsTolerance: 45,
+    centsTolerance: 50,
     smoothingAmount: 0.4
   },
   belting: {
     noiseGateRMS: 0.0025,
     pitchConfidenceThreshold: 0.5,
-    centsTolerance: 25,
+    centsTolerance: 50,
     smoothingAmount: 0.25
+  },
+  iphone: {
+    noiseGateRMS: 0.003,
+    pitchConfidenceThreshold: 0.55,
+    centsTolerance: 50,
+    smoothingAmount: 0.5
   }
 };
 
@@ -46,6 +53,7 @@ const DEFAULT_SETTINGS: EngineSettings = {
   pitchConfidenceThreshold: 0.5,
   centsTolerance: 50,
   smoothingAmount: 0.3,
+  scaleId: 'c_major',
   modules: {
     pitch: true,
     stability: true,
@@ -102,6 +110,7 @@ export function getAvailablePresets(): { id: EnginePreset; label: string }[] {
     { id: 'quiet', label: 'Quiet room' },
     { id: 'noisy', label: 'Noisy room' },
     { id: 'whisper', label: 'Whisper' },
-    { id: 'belting', label: 'Belting' }
+    { id: 'belting', label: 'Belting' },
+    { id: 'iphone', label: 'iPhone mic' }
   ];
 }

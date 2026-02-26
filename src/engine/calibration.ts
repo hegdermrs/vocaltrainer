@@ -5,7 +5,7 @@ interface CalibrationSample {
   timestamp: number;
 }
 
-const CALIBRATION_DURATION_MS = 2000;
+const CALIBRATION_DURATION_MS = 5000;
 const calibrationSamples: CalibrationSample[] = [];
 let calibrationStartTime: number | null = null;
 let isCalibrating = false;
@@ -47,13 +47,11 @@ function finishCalibration(): void {
     return;
   }
 
-  const rmsValues = calibrationSamples.map(s => s.rms);
-  const mean = rmsValues.reduce((sum, val) => sum + val, 0) / rmsValues.length;
-
-  const variance = rmsValues.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / rmsValues.length;
-  const stdDev = Math.sqrt(variance);
-
-  const calculatedGate = mean + 2 * stdDev;
+  const rmsValues = calibrationSamples.map(s => s.rms).sort((a, b) => a - b);
+  const median = getPercentile(rmsValues, 0.5);
+  const absDeviations = rmsValues.map(v => Math.abs(v - median)).sort((a, b) => a - b);
+  const mad = getPercentile(absDeviations, 0.5);
+  const calculatedGate = median + 3 * mad;
   noiseGate = Math.max(0.0005, Math.min(0.015, calculatedGate));
 
   updateEngineSettings({ noiseGateRMS: noiseGate });
@@ -83,6 +81,12 @@ export function getCalibrationState(): CalibrationState {
     meanRMS: mean,
     stdDevRMS: stdDev
   };
+}
+
+function getPercentile(values: number[], percentile: number): number {
+  if (values.length === 0) return 0;
+  const idx = Math.min(values.length - 1, Math.max(0, Math.floor(values.length * percentile)));
+  return values[idx];
 }
 
 export function getNoiseGate(): number {

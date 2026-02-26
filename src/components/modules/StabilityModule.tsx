@@ -120,11 +120,8 @@ export function StabilityModule({ state }: StabilityModuleProps) {
               <span className="text-sm text-muted-foreground">Stability:</span>
               <span className="text-lg font-semibold">{stabilityPercent.toFixed(0)}%</span>
             </div>
-            <div className="w-full bg-slate-200 rounded-full h-3 overflow-hidden">
-              <div
-                className={`h-full transition-all duration-300 ${getStabilityColor()}`}
-                style={{ width: `${stabilityPercent}%` }}
-              />
+            <div className="text-center text-5xl font-bold tabular-nums text-slate-700">
+              {stabilityPercent.toFixed(0)}%
             </div>
           </div>
           <div className="flex justify-between items-center">

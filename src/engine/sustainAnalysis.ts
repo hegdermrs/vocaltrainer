@@ -13,7 +13,7 @@ export interface SustainState {
 
 const DEFAULT_SETTINGS: SustainSettings = {
   pitchConfidenceThreshold: 0.6,
-  centsTolerance: 25,
+  centsTolerance: 50,
   minRMSThreshold: 0.005
 };
 

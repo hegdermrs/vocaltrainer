@@ -13,11 +13,11 @@ export class VoiceAnalyzer {
     this.audioCapture = new AudioCapture();
   }
 
-  async start(callback: AnalysisCallback): Promise<void> {
+  async start(callback: AnalysisCallback, deviceId?: string): Promise<void> {
     this.callback = callback;
     this.currentState = createEmptyState();
     resetEngineContext();
-    await this.audioCapture.start(this.handleAudioFrame);
+    await this.audioCapture.start(this.handleAudioFrame, deviceId);
   }
 
   stop(): void {

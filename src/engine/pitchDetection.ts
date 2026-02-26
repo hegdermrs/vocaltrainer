@@ -13,9 +13,14 @@ const MAX_FREQ = 1000;
 const SMALL_CUTOFF = 0.25;
 
 const pitchHistory: number[] = [];
-const MEDIAN_WINDOW = 7;
+const MIN_MEDIAN_WINDOW = 3;
+const MAX_MEDIAN_WINDOW = 11;
 
-export function detectPitch(buffer: Float32Array, sampleRate: number): PitchResult | null {
+export function detectPitch(
+  buffer: Float32Array,
+  sampleRate: number,
+  smoothingAmount = 0.3
+): PitchResult | null {
   const nsdf = calculateNSDF(buffer);
 
   const peaks = findPeaks(nsdf, SMALL_CUTOFF);
@@ -38,14 +43,15 @@ export function detectPitch(buffer: Float32Array, sampleRate: number): PitchResu
     return null;
   }
 
+  const medianWindow = getMedianWindow(smoothingAmount);
   pitchHistory.push(rawFrequency);
-  if (pitchHistory.length > MEDIAN_WINDOW) {
+  if (pitchHistory.length > medianWindow) {
     pitchHistory.shift();
   }
 
   let smoothedFrequency: number;
 
-  if (pitchHistory.length >= 3) {
+  if (pitchHistory.length >= Math.min(3, medianWindow)) {
     const sorted = [...pitchHistory].sort((a, b) => a - b);
     smoothedFrequency = sorted[Math.floor(sorted.length / 2)];
   } else {
@@ -165,4 +171,14 @@ export function frequencyToNoteNameAndCents(frequencyHz: number): { noteName: st
 
 export function resetPitchDetectionContext(): void {
   pitchHistory.length = 0;
+}
+
+function getMedianWindow(smoothingAmount: number): number {
+  const amount = clamp(smoothingAmount, 0, 1);
+  const window = Math.round(MIN_MEDIAN_WINDOW + amount * (MAX_MEDIAN_WINDOW - MIN_MEDIAN_WINDOW));
+  return window % 2 === 0 ? window + 1 : window;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
 }

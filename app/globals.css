@@ -1,3 +1,5 @@
+@import 'react-piano/dist/styles.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -79,4 +81,26 @@
   body {
     @apply bg-background text-foreground;
   }
+}
+
+.ReactPiano__Key--active {
+  background: #93c5fd !important;
+  box-shadow: 0 0 18px rgba(59, 130, 246, 0.6) !important;
+}
+
+.ReactPiano__Key--active.ReactPiano__Key--accidental {
+  background: #1e293b !important;
+  box-shadow: 0 0 18px rgba(59, 130, 246, 0.8) !important;
+}
+
+.ReactPiano__Keyboard {
+  height: 128px;
+  width: 100%;
+  border: 2px solid #e11d48;
+  background: #fff;
+}
+
+.ReactPiano__Key {
+  height: 100%;
+  border: 1px solid #0ea5e9 !important;
 }

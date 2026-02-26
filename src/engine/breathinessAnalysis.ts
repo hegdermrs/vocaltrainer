@@ -1,91 +1,150 @@
-export interface BreathinessResult {
-  breathiness: number;
-  highFreqRatio: number;
-  spectralFlatness: number;
+const MIN_RMS = 0.0002;
+const EMA_ALPHA = 0.2;
+const HOLD_DECAY = 0.97;
+
+export interface BreathinessDebug {
+  rms: number;
+  periodicity: number;
+  zcr: number;
+  rawScore: number;
+  smoothedScore: number;
 }
 
-const BREATHINESS_HISTORY_SIZE = 10;
-const breathinessHistory: number[] = [];
+let lastDebug: BreathinessDebug = {
+  rms: 0,
+  periodicity: 0,
+  zcr: 0,
+  rawScore: 0,
+  smoothedScore: 0
+};
+let lastSmoothed = 0;
+let lastHeld = 0;
 
 export function calculateBreathiness(
-  analyserNode: AnalyserNode | null,
+  frame: Float32Array | null,
   sampleRate: number
 ): number {
-  if (!analyserNode) {
+  if (!frame || frame.length === 0) {
     return 0;
   }
 
-  const fftSize = analyserNode.fftSize;
-  const frequencyData = new Uint8Array(analyserNode.frequencyBinCount);
-  analyserNode.getByteFrequencyData(frequencyData);
-
-  const binFrequency = sampleRate / fftSize;
-
-  const lowFreqThresholdHz = 300;
-  const highFreqThresholdHz = 4000;
-
-  const lowFreqBinStart = Math.floor(lowFreqThresholdHz / binFrequency);
-  const highFreqBinStart = Math.floor(highFreqThresholdHz / binFrequency);
-
-  let lowEnergy = 0;
-  let highEnergy = 0;
-  let totalEnergy = 0;
-
-  for (let i = lowFreqBinStart; i < frequencyData.length && i < highFreqBinStart * 2; i++) {
-    const magnitude = frequencyData[i] / 255.0;
-    totalEnergy += magnitude;
-
-    if (i < highFreqBinStart) {
-      lowEnergy += magnitude;
-    } else {
-      highEnergy += magnitude;
-    }
+  const centered = centerFrame(frame);
+  const rms = calculateRMS(centered);
+  if (rms < MIN_RMS) {
+    const heldBreathiness = lastHeld * HOLD_DECAY;
+    lastHeld = heldBreathiness;
+    lastSmoothed = heldBreathiness;
+    lastDebug = {
+      ...lastDebug,
+      rms,
+      rawScore: 0,
+      smoothedScore: heldBreathiness
+    };
+    return Math.max(0, Math.min(1, heldBreathiness));
   }
 
-  if (totalEnergy < 0.01) {
-    return breathinessHistory.length > 0
-      ? breathinessHistory[breathinessHistory.length - 1]
-      : 0;
-  }
+  const periodicity = calculatePeriodicity(centered, sampleRate);
+  const zcr = calculateZCR(centered);
 
-  const highFreqRatio = totalEnergy > 0 ? highEnergy / totalEnergy : 0;
+  const aperiodicityScore = clamp(1 - periodicity, 0, 1);
+  const zcrScore = clamp((zcr - 0.015) / 0.12, 0, 1);
 
-  const spectralFlatness = calculateSpectralFlatness(frequencyData);
+  const rawScore = clamp(
+    aperiodicityScore * 0.85 + zcrScore * 0.15,
+    0,
+    1
+  );
 
-  const breathinessScore = Math.min(1, (highFreqRatio * 0.6 + spectralFlatness * 0.4) * 1.8);
+  const boosted = clamp((rawScore - 0.08) / 0.6, 0, 1);
+  const breathinessScore = Math.pow(boosted, 0.6);
 
-  breathinessHistory.push(breathinessScore);
-  if (breathinessHistory.length > BREATHINESS_HISTORY_SIZE) {
-    breathinessHistory.shift();
-  }
+  const smoothedBreathiness = EMA_ALPHA * breathinessScore + (1 - EMA_ALPHA) * lastSmoothed;
+  lastSmoothed = smoothedBreathiness;
+  const heldBreathiness = Math.max(smoothedBreathiness, lastHeld * HOLD_DECAY);
+  lastHeld = heldBreathiness;
 
-  const smoothedBreathiness = breathinessHistory.reduce((sum, val) => sum + val, 0) / breathinessHistory.length;
+  lastDebug = {
+    rms,
+    periodicity,
+    zcr,
+    rawScore: breathinessScore,
+    smoothedScore: heldBreathiness
+  };
 
-  return Math.max(0, Math.min(1, smoothedBreathiness));
+  return Math.max(0, Math.min(1, heldBreathiness));
 }
 
-function calculateSpectralFlatness(frequencyData: Uint8Array): number {
-  let geometricSum = 0;
-  let arithmeticSum = 0;
-  let count = 0;
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
 
-  for (let i = 0; i < frequencyData.length; i++) {
-    const magnitude = frequencyData[i] / 255.0;
-    if (magnitude > 0.01) {
-      geometricSum += Math.log(magnitude);
-      arithmeticSum += magnitude;
-      count++;
+function calculateRMS(buffer: Float32Array): number {
+  let sum = 0;
+  for (let i = 0; i < buffer.length; i++) {
+    sum += buffer[i] * buffer[i];
+  }
+  return Math.sqrt(sum / buffer.length);
+}
+
+function centerFrame(buffer: Float32Array): Float32Array {
+  let mean = 0;
+  for (let i = 0; i < buffer.length; i++) {
+    mean += buffer[i];
+  }
+  mean /= buffer.length;
+  const centered = new Float32Array(buffer.length);
+  for (let i = 0; i < buffer.length; i++) {
+    centered[i] = buffer[i] - mean;
+  }
+  return centered;
+}
+
+function calculateZCR(buffer: Float32Array): number {
+  let crossings = 0;
+  for (let i = 1; i < buffer.length; i++) {
+    const prev = buffer[i - 1];
+    const curr = buffer[i];
+    if ((prev >= 0 && curr < 0) || (prev < 0 && curr >= 0)) {
+      crossings++;
+    }
+  }
+  return crossings / (buffer.length - 1);
+}
+
+function calculatePeriodicity(buffer: Float32Array, sampleRate: number): number {
+  const minFreq = 80;
+  const maxFreq = 1000;
+  const minLag = Math.floor(sampleRate / maxFreq);
+  const maxLag = Math.floor(sampleRate / minFreq);
+  let maxCorr = 0;
+
+  for (let lag = minLag; lag <= maxLag; lag++) {
+    let sum = 0;
+    let energy1 = 0;
+    let energy2 = 0;
+    const limit = buffer.length - lag;
+    for (let i = 0; i < limit; i++) {
+      const a = buffer[i];
+      const b = buffer[i + lag];
+      sum += a * b;
+      energy1 += a * a;
+      energy2 += b * b;
+    }
+    const denom = Math.sqrt(energy1 * energy2) + 1e-12;
+    const corr = sum / denom;
+    if (corr > maxCorr) {
+      maxCorr = corr;
     }
   }
 
-  if (count === 0) return 0;
-
-  const geometricMean = Math.exp(geometricSum / count);
-  const arithmeticMean = arithmeticSum / count;
-
-  return arithmeticMean > 0 ? geometricMean / arithmeticMean : 0;
+  return clamp(maxCorr, 0, 1);
 }
 
 export function resetBreathinessContext(): void {
-  breathinessHistory.length = 0;
+  lastSmoothed = 0;
+  lastHeld = 0;
+}
+
+export function getBreathinessDebug(): BreathinessDebug {
+  return { ...lastDebug };
 }

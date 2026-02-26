@@ -12,18 +12,22 @@ export class AudioCapture {
   private bufferSize = 2048;
   private useWorklet = false;
 
-  async start(callback: AudioFrameCallback): Promise<void> {
+  async start(callback: AudioFrameCallback, deviceId?: string): Promise<void> {
     try {
       this.callback = callback;
+      const isIOS =
+        typeof navigator !== 'undefined' && /iPad|iPhone|iPod/.test(navigator.userAgent);
+      this.bufferSize = isIOS ? 1024 : 2048;
       this.micStream = await createMicStream({
         echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: false
+        noiseSuppression: false,
+        autoGainControl: false,
+        deviceId
       });
 
       this.analyserNode = this.micStream.audioContext.createAnalyser();
       this.analyserNode.fftSize = this.bufferSize * 2;
-      this.analyserNode.smoothingTimeConstant = 0.8;
+      this.analyserNode.smoothingTimeConstant = isIOS ? 0.85 : 0.8;
 
       this.micStream.filteredOutput.connect(this.analyserNode);
 

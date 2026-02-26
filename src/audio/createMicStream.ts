@@ -2,6 +2,7 @@ export interface MicStreamConfig {
   echoCancellation?: boolean;
   noiseSuppression?: boolean;
   autoGainControl?: boolean;
+  deviceId?: string;
 }
 
 export interface MicStream {
@@ -19,26 +20,33 @@ export async function createMicStream(config: MicStreamConfig = {}): Promise<Mic
     noiseSuppression = true,
     autoGainControl = false
   } = config;
+  const { deviceId } = config;
+
+  const isIOS =
+    typeof navigator !== 'undefined' && /iPad|iPhone|iPod/.test(navigator.userAgent);
 
   const stream = await navigator.mediaDevices.getUserMedia({
     audio: {
       echoCancellation,
       noiseSuppression,
-      autoGainControl
+      autoGainControl,
+      channelCount: 1,
+      sampleRate: isIOS ? { ideal: 48000 } : undefined,
+      deviceId: deviceId ? { exact: deviceId } : undefined
     }
   });
 
-  const audioContext = new AudioContext();
+  const audioContext = new AudioContext({ latencyHint: 'interactive' });
   const sourceNode = audioContext.createMediaStreamSource(stream);
 
   const highPassFilter = audioContext.createBiquadFilter();
   highPassFilter.type = 'highpass';
-  highPassFilter.frequency.value = 80;
+  highPassFilter.frequency.value = isIOS ? 90 : 80;
   highPassFilter.Q.value = 0.7071;
 
   const lowPassFilter = audioContext.createBiquadFilter();
   lowPassFilter.type = 'lowpass';
-  lowPassFilter.frequency.value = 1000;
+  lowPassFilter.frequency.value = isIOS ? 5000 : 3000;
   lowPassFilter.Q.value = 0.7071;
 
   sourceNode.connect(highPassFilter);
