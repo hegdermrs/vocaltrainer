@@ -42,8 +42,8 @@ export function PitchModule({ state }: PitchModuleProps) {
     const cents = displayPitch?.cents ?? 0;
     const abs = Math.abs(cents);
     const color =
-      abs <= 10 ? 'text-green-600' : abs <= 25 ? 'text-amber-600' : 'text-red-600';
-    if (abs < 5) {
+      abs <= 50 ? 'text-green-600' : abs <= 75 ? 'text-amber-600' : 'text-red-600';
+    if (abs < 12) {
       return <span className={`font-bold ${color}`}>●</span>;
     }
     if (cents < 0) {
@@ -56,8 +56,8 @@ export function PitchModule({ state }: PitchModuleProps) {
     const cents = displayPitch?.cents;
     if (cents === undefined) return 'text-slate-400';
     const abs = Math.abs(cents);
-    if (abs <= 10) return 'text-green-600';
-    if (abs <= 25) return 'text-amber-600';
+    if (abs <= 50) return 'text-green-600';
+    if (abs <= 75) return 'text-amber-600';
     return 'text-red-600';
   };
   return (
@@ -105,6 +105,7 @@ export function PitchModule({ state }: PitchModuleProps) {
     </Card>
   );
 }
+
 
 
 

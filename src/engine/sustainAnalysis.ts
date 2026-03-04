@@ -14,16 +14,26 @@ export interface SustainState {
 const DEFAULT_SETTINGS: SustainSettings = {
   pitchConfidenceThreshold: 0.6,
   centsTolerance: 50,
-  minRMSThreshold: 0.005
+  minRMSThreshold: 0.0025
 };
 
-let sustainStartTime: number | null = null;
 let bestSustainDuration = 0;
 let settings: SustainSettings = { ...DEFAULT_SETTINGS };
 
 let lastPitchHz: number | undefined = undefined;
-const PITCH_DEVIATION_TOLERANCE = 0.08;
-let framesSinceStart = 0;
+let currentSustainMs = 0;
+let offStreakMs = 0;
+
+const START_MIN_MS = 90;
+const MAX_GAP_MS = 850;
+const START_CONF_MARGIN = 0.05;
+const CONTINUE_CONF_MARGIN = 0.2;
+const START_CENTS_MARGIN = 10;
+const CONTINUE_CENTS_MARGIN = 35;
+const START_RMS_MARGIN = 0.9;
+const CONTINUE_RMS_MARGIN = 0.35;
+const PITCH_DEVIATION_START = 0.08;
+const PITCH_DEVIATION_CONTINUE = 0.22;
 
 export function updateSustain(
   pitchConfidence: number | undefined,
@@ -32,49 +42,67 @@ export function updateSustain(
   frameDurationMs: number,
   pitchHz: number | undefined
 ): SustainState {
-  const hasPitch = pitchConfidence !== undefined && pitchConfidence >= settings.pitchConfidenceThreshold;
-  const isInTune = cents !== undefined && Math.abs(cents) <= settings.centsTolerance;
-  const hasVolume = rms >= settings.minRMSThreshold;
+  const startHasPitch =
+    pitchConfidence !== undefined &&
+    pitchConfidence >= settings.pitchConfidenceThreshold + START_CONF_MARGIN;
+  const continueHasPitch =
+    pitchConfidence !== undefined &&
+    pitchConfidence >= settings.pitchConfidenceThreshold - CONTINUE_CONF_MARGIN;
 
-  let isPitchStable = true;
-  if (pitchHz !== undefined && lastPitchHz !== undefined) {
+  const startInTune =
+    cents !== undefined &&
+    Math.abs(cents) <= settings.centsTolerance - START_CENTS_MARGIN;
+  const continueInTune =
+    cents !== undefined &&
+    Math.abs(cents) <= settings.centsTolerance + CONTINUE_CENTS_MARGIN;
+
+  const startHasVolume = rms >= settings.minRMSThreshold * START_RMS_MARGIN;
+  const continueHasVolume = rms >= settings.minRMSThreshold * CONTINUE_RMS_MARGIN;
+
+  let startPitchStable = true;
+  let continuePitchStable = true;
+  if (pitchHz !== undefined && lastPitchHz !== undefined && lastPitchHz > 0) {
     const pitchDeviation = Math.abs(pitchHz - lastPitchHz) / lastPitchHz;
-    isPitchStable = pitchDeviation < PITCH_DEVIATION_TOLERANCE;
+    startPitchStable = pitchDeviation < PITCH_DEVIATION_START;
+    continuePitchStable = pitchDeviation < PITCH_DEVIATION_CONTINUE;
   }
 
-  const meetsConditions = hasPitch && isInTune && hasVolume;
+  const meetsStart = startHasPitch && startInTune && startHasVolume && startPitchStable;
+  const meetsContinue =
+    continueHasPitch && continueInTune && continueHasVolume && continuePitchStable;
 
-  let currentSeconds = 0;
-  let isSustaining = false;
+  if (pitchHz !== undefined) {
+    lastPitchHz = pitchHz;
+  }
 
-  if (meetsConditions) {
-    if (sustainStartTime === null) {
-      sustainStartTime = Date.now();
-      framesSinceStart = 0;
+  if (currentSustainMs > 0) {
+    if (meetsContinue) {
+      currentSustainMs += frameDurationMs;
+      offStreakMs = 0;
     } else {
-      framesSinceStart++;
-    }
-
-    const elapsed = (Date.now() - sustainStartTime) / 1000;
-
-    if (framesSinceStart >= 3 && elapsed >= 0.1) {
-      currentSeconds = elapsed;
-      isSustaining = true;
-
-      if (currentSeconds > bestSustainDuration) {
-        bestSustainDuration = currentSeconds;
+      offStreakMs += frameDurationMs;
+      if (offStreakMs <= MAX_GAP_MS) {
+        // Keep sustain alive during short dropouts.
+        currentSustainMs += frameDurationMs;
+      } else {
+        currentSustainMs = 0;
+        offStreakMs = 0;
+        lastPitchHz = undefined;
       }
     }
-
-    if (pitchHz !== undefined) {
-      lastPitchHz = pitchHz;
-    }
+  } else if (meetsStart) {
+    currentSustainMs += frameDurationMs;
+    offStreakMs = 0;
   } else {
-    sustainStartTime = null;
-    currentSeconds = 0;
-    isSustaining = false;
-    lastPitchHz = undefined;
-    framesSinceStart = 0;
+    currentSustainMs = 0;
+    offStreakMs = 0;
+  }
+
+  const currentSeconds = currentSustainMs / 1000;
+  const isSustaining = currentSustainMs >= START_MIN_MS;
+
+  if (isSustaining && currentSeconds > bestSustainDuration) {
+    bestSustainDuration = currentSeconds;
   }
 
   return {
@@ -94,12 +122,13 @@ export function getSustainSettings(): SustainSettings {
 }
 
 export function resetSustainContext(): void {
-  sustainStartTime = null;
   bestSustainDuration = 0;
   lastPitchHz = undefined;
-  framesSinceStart = 0;
+  currentSustainMs = 0;
+  offStreakMs = 0;
 }
 
 export function resetBestSustain(): void {
   bestSustainDuration = 0;
 }
+

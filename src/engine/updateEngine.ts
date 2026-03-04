@@ -12,7 +12,6 @@ import { addCalibrationSample, getNoiseGate, isCalibrationActive, resetCalibrati
 import { calculateBreathiness, getBreathinessDebug, resetBreathinessContext } from './breathinessAnalysis';
 import { updateSustain, resetSustainContext } from './sustainAnalysis';
 import { getEngineSettings } from './engineSettings';
-import { addScaleSample, getScaleDefinition, getScaleMatch, isNoteInScale, resetScaleContext } from './scaleAnalysis';
 import { addRangeSample, getDynamicRangeStats, resetDynamicRangeContext } from './dynamicRangeAnalysis';
 
 interface UpdateContext {
@@ -20,19 +19,28 @@ interface UpdateContext {
   volumeHistory: number[];
   displayPitchHistory: number[];
   lastDisplayPitch: number | undefined;
+  displayedNoteName: string | undefined;
+  pendingNoteName: string | undefined;
+  pendingNoteFrames: number;
 }
 
 const context: UpdateContext = {
   pitchHistory: [],
   volumeHistory: [],
   displayPitchHistory: [],
-  lastDisplayPitch: undefined
+  lastDisplayPitch: undefined,
+  displayedNoteName: undefined,
+  pendingNoteName: undefined,
+  pendingNoteFrames: 0
 };
 
 const MAX_PITCH_HISTORY = 30;
 const MAX_VOLUME_HISTORY = 50;
 const MIN_DISPLAY_WINDOW = 5;
 const MAX_DISPLAY_WINDOW = 15;
+const NOTE_SWITCH_CONFIRM_FRAMES = 4;
+const BOUNDARY_CENTS_BLOCK = 50; // quarter-tone tolerance
+const EXTRA_CONFIDENCE_FOR_SWITCH = 0.08;
 
 export function updateEngine(
   frame: Float32Array,
@@ -81,21 +89,27 @@ export function updateEngine(
     }
     context.lastDisplayPitch = displayPitch;
 
-    const { noteName, cents } = frequencyToNoteNameAndCents(displayPitch);
+    const rawNote = frequencyToNoteNameAndCents(displayPitch);
+    const stabilizedNoteName = stabilizeDetectedNote(
+      rawNote.noteName,
+      rawNote.cents,
+      pitch.confidence,
+      settings.pitchConfidenceThreshold
+    );
+    const stabilized = frequencyToNoteNameAndCents(displayPitch);
+    if (stabilized.noteName !== stabilizedNoteName) {
+      const targetMidi = noteNameToMidi(stabilizedNoteName);
+      if (targetMidi !== null) {
+        const targetFreq = midiToFrequency(targetMidi);
+        stabilized.cents = Math.round(1200 * Math.log2(displayPitch / targetFreq));
+      }
+      stabilized.noteName = stabilizedNoteName;
+    }
 
     newState.pitchHz = displayPitch;
-    newState.noteName = noteName;
-    newState.cents = cents;
+    newState.noteName = stabilized.noteName;
+    newState.cents = stabilized.cents;
     newState.pitchConfidence = pitch.confidence;
-
-    const scaleDef = getScaleDefinition(settings.scaleId);
-    if (scaleDef) {
-      const inScale = isNoteInScale(noteName, settings.scaleId);
-      addScaleSample(inScale);
-      newState.scaleMatch = getScaleMatch();
-      newState.scaleInKey = inScale;
-      newState.scaleLabel = scaleDef.label;
-    }
 
     context.pitchHistory.push(displayPitch);
     if (context.pitchHistory.length > MAX_PITCH_HISTORY) {
@@ -109,21 +123,23 @@ export function updateEngine(
 
     if (!newState.rangeLowHz || displayPitch < newState.rangeLowHz) {
       newState.rangeLowHz = displayPitch;
-      newState.rangeLowNote = noteName;
+      newState.rangeLowNote = stabilized.noteName;
     }
     if (!newState.rangeHighHz || displayPitch > newState.rangeHighHz) {
       newState.rangeHighHz = displayPitch;
-      newState.rangeHighNote = noteName;
+      newState.rangeHighNote = stabilized.noteName;
     }
   } else {
     context.displayPitchHistory = [];
     context.lastDisplayPitch = undefined;
+    context.displayedNoteName = undefined;
+    context.pendingNoteName = undefined;
+    context.pendingNoteFrames = 0;
     newState.pitchHz = undefined;
     newState.noteName = undefined;
     newState.cents = undefined;
     newState.pitchConfidence = undefined;
     newState.pitchDetected = false;
-    newState.scaleInKey = undefined;
   }
 
   if (settings.modules.sustain) {
@@ -200,12 +216,96 @@ export function resetEngineContext(): void {
   context.volumeHistory = [];
   context.displayPitchHistory = [];
   context.lastDisplayPitch = undefined;
+  context.displayedNoteName = undefined;
+  context.pendingNoteName = undefined;
+  context.pendingNoteFrames = 0;
   resetPitchDetectionContext();
   resetStabilityContext();
   resetVolumeConsistencyContext();
   resetCalibration();
   resetBreathinessContext();
-  resetScaleContext();
   resetDynamicRangeContext();
   resetSustainContext();
+}
+
+function stabilizeDetectedNote(
+  nextNoteName: string,
+  cents: number,
+  confidence: number,
+  baseConfidenceThreshold: number
+): string {
+  const current = context.displayedNoteName;
+  if (!current) {
+    context.displayedNoteName = nextNoteName;
+    context.pendingNoteName = undefined;
+    context.pendingNoteFrames = 0;
+    return nextNoteName;
+  }
+
+  if (nextNoteName === current) {
+    context.pendingNoteName = undefined;
+    context.pendingNoteFrames = 0;
+    return current;
+  }
+
+  // Prevent fast toggles near note boundaries and low-confidence transitions.
+  if (
+    Math.abs(cents) >= BOUNDARY_CENTS_BLOCK ||
+    confidence < baseConfidenceThreshold + EXTRA_CONFIDENCE_FOR_SWITCH
+  ) {
+    context.pendingNoteName = undefined;
+    context.pendingNoteFrames = 0;
+    return current;
+  }
+
+  if (context.pendingNoteName !== nextNoteName) {
+    context.pendingNoteName = nextNoteName;
+    context.pendingNoteFrames = 1;
+    return current;
+  }
+
+  context.pendingNoteFrames += 1;
+  if (context.pendingNoteFrames < NOTE_SWITCH_CONFIRM_FRAMES) {
+    return current;
+  }
+
+  context.displayedNoteName = nextNoteName;
+  context.pendingNoteName = undefined;
+  context.pendingNoteFrames = 0;
+  return nextNoteName;
+}
+
+function noteNameToMidi(noteName: string): number | null {
+  const match = noteName.match(/^([A-G])([#b]?)(-?\d+)$/);
+  if (!match) return null;
+  const letter = match[1];
+  const accidental = match[2] || '';
+  const octave = Number(match[3]);
+  const name = `${letter}${accidental}`;
+  const pcMap: Record<string, number> = {
+    C: 0,
+    'C#': 1,
+    Db: 1,
+    D: 2,
+    'D#': 3,
+    Eb: 3,
+    E: 4,
+    F: 5,
+    'F#': 6,
+    Gb: 6,
+    G: 7,
+    'G#': 8,
+    Ab: 8,
+    A: 9,
+    'A#': 10,
+    Bb: 10,
+    B: 11
+  };
+  const pc = pcMap[name];
+  if (pc === undefined) return null;
+  return (octave + 1) * 12 + pc;
+}
+
+function midiToFrequency(midi: number): number {
+  return 440 * Math.pow(2, (midi - 69) / 12);
 }

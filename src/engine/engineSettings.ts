@@ -3,7 +3,6 @@ export interface EngineSettings {
   pitchConfidenceThreshold: number;
   centsTolerance: number;
   smoothingAmount: number;
-  scaleId: string;
   modules: {
     pitch: boolean;
     stability: boolean;
@@ -53,7 +52,6 @@ const DEFAULT_SETTINGS: EngineSettings = {
   pitchConfidenceThreshold: 0.5,
   centsTolerance: 50,
   smoothingAmount: 0.3,
-  scaleId: 'c_major',
   modules: {
     pitch: true,
     stability: true,

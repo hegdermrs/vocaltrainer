@@ -13,14 +13,18 @@ export interface EngineState {
   breathiness?: number;
   breathinessDebug?: {
     rms: number;
+    spectralFlatness: number;
+    hfNoiseRatio: number;
     periodicity: number;
-    zcr: number;
+    periodicityDrift: number;
+    harmonicSNR: number;
+    bandContrast: number;
     rawScore: number;
     smoothedScore: number;
   };
-  scaleMatch?: number;
-  scaleInKey?: boolean;
-  scaleLabel?: string;
+  assistedTargetNote?: string;
+  assistedFollowHit?: boolean;
+  assistedFollowAccuracy?: number;
   dynamicRangeDb?: number;
   loudnessStdDb?: number;
   rangeLowHz?: number;
@@ -47,9 +51,9 @@ export function createEmptyState(): EngineState {
     volumeConsistency: undefined,
     breathiness: undefined,
     breathinessDebug: undefined,
-    scaleMatch: undefined,
-    scaleInKey: undefined,
-    scaleLabel: undefined,
+    assistedTargetNote: undefined,
+    assistedFollowHit: undefined,
+    assistedFollowAccuracy: undefined,
     rangeLowHz: undefined,
     rangeHighHz: undefined,
     rangeLowNote: undefined,

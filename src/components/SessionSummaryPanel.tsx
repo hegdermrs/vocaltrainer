@@ -10,7 +10,8 @@ export interface SessionSummary {
   maxSustainSeconds: number;
   avgStability: number;
   tuningAccuracy: number;
-  scaleAccuracy: number;
+  practiceMode: 'free' | 'assisted';
+  assistedFollowAccuracy?: number;
 }
 
 interface SessionSummaryPanelProps {
@@ -42,7 +43,7 @@ export function SessionSummaryPanel({
         </CardHeader>
         <CardContent>
           <p className="text-sm text-muted-foreground">
-            Start and stop a recording session to see your best sustain, in-scale accuracy, and tuning
+            Start and stop a recording session to see your best sustain, follow accuracy, and tuning
             accuracy.
           </p>
         </CardContent>
@@ -71,9 +72,9 @@ export function SessionSummaryPanel({
             </div>
           </div>
           <div className="space-y-1">
-            <div className="text-xs text-muted-foreground">In-scale accuracy</div>
+            <div className="text-xs text-muted-foreground">Follow accuracy</div>
             <div className="text-xl font-semibold">
-              {(latest.scaleAccuracy * 100).toFixed(0)}
+              {((latest.assistedFollowAccuracy ?? 0) * 100).toFixed(0)}
               <span className="ml-0.5 text-xs text-muted-foreground">%</span>
             </div>
           </div>
@@ -96,8 +97,8 @@ export function SessionSummaryPanel({
               compact
             />
             <MetricChart
-              label="In-Scale Accuracy (%)"
-              values={chartData.map((s) => s.scaleAccuracy * 100)}
+              label="Follow Accuracy (%)"
+              values={chartData.map((s) => (s.assistedFollowAccuracy ?? 0) * 100)}
               format={(v) => `${v.toFixed(0)}%`}
               color="#16a34a"
               compact
@@ -127,7 +128,7 @@ export function SessionSummaryPanel({
                 <span className="truncate">{formatDate(s.timestamp)}</span>
                 <span className="flex gap-2 tabular-nums">
                   <span>{s.maxSustainSeconds.toFixed(1)}s</span>
-                  <span>{(s.scaleAccuracy * 100).toFixed(0)}% in-scale</span>
+                  <span>{((s.assistedFollowAccuracy ?? 0) * 100).toFixed(0)}% follow</span>
                   <span>{(s.tuningAccuracy * 100).toFixed(0)}% in tune</span>
                 </span>
               </div>
