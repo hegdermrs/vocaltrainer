@@ -52,7 +52,7 @@ export class AssistedGuide {
     targetNoteName: undefined,
     targetMidi: undefined,
     profile: 'male',
-    exerciseId: 'sustain',
+    exerciseId: 'three_tone',
     transposeSemitones: 0,
     bpm: 80,
     isRunning: false

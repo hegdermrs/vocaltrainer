@@ -1,0 +1,427 @@
+﻿'use client';
+
+import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
+import { useParams } from 'next/navigation';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { getSessionArtifact } from '@/src/analysis/storage';
+import { PracticeTelemetryFrame, SessionArtifact } from '@/src/analysis/types';
+
+function formatDate(timestamp: string) {
+  return new Date(timestamp).toLocaleString();
+}
+
+function readSessionStorageArtifact(sessionId: number): SessionArtifact | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.sessionStorage.getItem(`voice-trainer-report-${sessionId}`);
+    return raw ? (JSON.parse(raw) as SessionArtifact) : null;
+  } catch {
+    return null;
+  }
+}
+
+function formatClock(seconds: number): string {
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
+}
+
+function scoreLabel(score: number): string {
+  if (score >= 85) return 'Very strong';
+  if (score >= 70) return 'Good';
+  if (score >= 55) return 'Getting there';
+  return 'Needs work';
+}
+
+function scoreColor(score: number): string {
+  if (score >= 85) return 'text-emerald-600';
+  if (score >= 70) return 'text-sky-600';
+  if (score >= 55) return 'text-amber-600';
+  return 'text-rose-600';
+}
+
+function buildSeries(frames: PracticeTelemetryFrame[], pick: (frame: PracticeTelemetryFrame) => number | undefined, limit = 180) {
+  if (frames.length === 0) return [] as number[];
+  const step = Math.max(1, Math.ceil(frames.length / limit));
+  const sampled: number[] = [];
+  for (let index = 0; index < frames.length; index += step) {
+    const value = pick(frames[index]);
+    sampled.push(typeof value === 'number' && Number.isFinite(value) ? value : 0);
+  }
+  return sampled;
+}
+
+function pathFromValues(values: number[]): string {
+  if (values.length === 0) return '';
+  const max = Math.max(...values);
+  const min = Math.min(...values);
+  const range = max - min || 1;
+
+  return values
+    .map((value, index) => {
+      const x = (index / Math.max(1, values.length - 1)) * 100;
+      const y = 100 - ((value - min) / range) * 100;
+      return `${index === 0 ? 'M' : 'L'} ${x.toFixed(2)} ${y.toFixed(2)}`;
+    })
+    .join(' ');
+}
+
+function TimelineChart({
+  title,
+  subtitle,
+  values,
+  stroke,
+  fill,
+  valueLabel,
+  emptyLabel
+}: {
+  title: string;
+  subtitle: string;
+  values: number[];
+  stroke: string;
+  fill: string;
+  valueLabel: string;
+  emptyLabel: string;
+}) {
+  const path = useMemo(() => pathFromValues(values), [values]);
+  const areaPath = useMemo(() => {
+    if (!path) return '';
+    const firstX = 0;
+    const lastX = 100;
+    const line = path.replace(/^M /, '');
+    return `M ${firstX} 100 ${line} L ${lastX} 100 Z`;
+  }, [path]);
+
+  const latestValue = values.length > 0 ? values[values.length - 1] : null;
+
+  return (
+    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h3 className="text-lg font-semibold text-slate-900">{title}</h3>
+          <p className="text-sm text-slate-600">{subtitle}</p>
+        </div>
+        <div className="text-right">
+          <div className="text-xs uppercase tracking-wide text-slate-400">Latest</div>
+          <div className="text-sm font-semibold text-slate-700">{latestValue !== null ? `${latestValue.toFixed(1)} ${valueLabel}` : emptyLabel}</div>
+        </div>
+      </div>
+      <div className="mt-4 rounded-xl border border-slate-100 bg-slate-50 p-3">
+        {values.length > 1 ? (
+          <svg viewBox="0 0 100 100" className="h-40 w-full" preserveAspectRatio="none">
+            <path d={areaPath} fill={fill} opacity="0.45" />
+            <path d={path} fill="none" stroke={stroke} strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        ) : (
+          <div className="flex h-40 items-center justify-center text-sm text-slate-400">{emptyLabel}</div>
+        )}
+      </div>
+      <div className="mt-2 flex justify-between text-xs text-slate-400">
+        <span>Session start</span>
+        <span>Session end</span>
+      </div>
+    </section>
+  );
+}
+
+function CoachScoreCard({ label, score }: { label: string; score: number }) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="text-xs uppercase tracking-wide text-slate-500">{label}</div>
+      <div className={`mt-2 text-4xl font-bold ${scoreColor(score)}`}>{Math.round(score)}</div>
+      <div className="mt-1 text-sm text-slate-600">{scoreLabel(score)}</div>
+    </div>
+  );
+}
+
+export default function AnalysisPage() {
+  const params = useParams<{ sessionId: string }>();
+  const [artifact, setArtifact] = useState<SessionArtifact | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const load = async () => {
+      const sessionId = Number(params?.sessionId);
+      if (!Number.isFinite(sessionId)) {
+        setLoading(false);
+        return;
+      }
+
+      const cachedArtifact = readSessionStorageArtifact(sessionId);
+      if (cachedArtifact) {
+        if (!cancelled) {
+          setArtifact(cachedArtifact);
+          setLoading(false);
+        }
+        return;
+      }
+
+      const nextArtifact = await getSessionArtifact(sessionId);
+      if (!cancelled) {
+        setArtifact(nextArtifact ?? null);
+        setLoading(false);
+      }
+    };
+
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [params]);
+
+  const derived = useMemo(() => {
+    if (!artifact) return null;
+    const frames = artifact.payload.frames;
+    return {
+      loudness: buildSeries(frames, (frame) => frame.rms ? frame.rms * 1000 : 0),
+      breathiness: buildSeries(frames, (frame) => frame.breathiness),
+      pitchConfidence: buildSeries(frames, (frame) => frame.pitchConfidence ? frame.pitchConfidence * 100 : 0),
+      sustain: buildSeries(frames, (frame) => frame.sustainSeconds),
+      durationLabel: formatClock(artifact.payload.metrics.durationSeconds),
+      followPercent: Math.round((artifact.payload.summary.assistedFollowAccuracy ?? artifact.payload.metrics.assistedFollowAccuracy ?? 0) * 100)
+    };
+  }, [artifact]);
+
+  if (loading) {
+    return <div className="min-h-screen bg-slate-50 px-4 py-10 text-slate-600">Loading analysis...</div>;
+  }
+
+  if (!artifact) {
+    return (
+      <div className="min-h-screen bg-slate-50 px-4 py-10">
+        <div className="mx-auto max-w-3xl rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
+          <div className="text-2xl font-semibold text-slate-900">Analysis not found</div>
+          <p className="mt-2 text-sm text-slate-600">
+            We could not find a saved AI analysis for this session yet.
+          </p>
+          <Button asChild className="mt-6">
+            <Link href="/">Back to trainer</Link>
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  const report = artifact.analysisReport;
+
+  return (
+    <div className="min-h-screen bg-gradient-to-b from-slate-50 to-slate-100 px-4 py-10">
+      <div className="mx-auto max-w-6xl space-y-6">
+        <div className="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <div className="text-sm text-slate-500">AI Session Analysis</div>
+              <h1 className="mt-1 text-3xl font-bold text-slate-900">Your practice recap</h1>
+              <p className="mt-2 text-sm text-slate-600">
+                Session from {formatDate(artifact.timestamp)} in {artifact.payload.practiceMode} mode.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Badge variant="outline">{artifact.analysisStatus}</Badge>
+              <Badge variant="outline">{artifact.payload.preset}</Badge>
+              <Button asChild variant="outline">
+                <Link href="/">Back</Link>
+              </Button>
+            </div>
+          </div>
+        </div>
+
+        {!report ? (
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6 text-sm text-amber-900">
+            This session exists, but the AI report has not completed yet.
+          </div>
+        ) : (
+          <>
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              <CoachScoreCard label="Pitch" score={report.scores.pitch} />
+              <CoachScoreCard label="Breath control" score={report.scores.breathiness_control} />
+              <CoachScoreCard label="Sustain" score={report.scores.sustain} />
+              <CoachScoreCard label={artifact.payload.practiceMode === 'assisted' ? 'Follow accuracy' : 'Dynamic control'} score={artifact.payload.practiceMode === 'assisted' ? report.scores.follow_accuracy : report.scores.dynamic_control} />
+            </div>
+
+            <section className="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
+              <div className="text-sm font-medium text-slate-500">Big picture</div>
+              <p className="mt-3 text-lg leading-8 text-slate-800">{report.summary}</p>
+            </section>
+
+            {derived && (
+              <div className="grid gap-6 lg:grid-cols-2">
+                <TimelineChart
+                  title="Voice energy over time"
+                  subtitle="A simple waveform-style view showing where your voice was stronger or lighter."
+                  values={derived.loudness}
+                  stroke="#2563eb"
+                  fill="#bfdbfe"
+                  valueLabel="energy"
+                  emptyLabel="No loudness data"
+                />
+                <TimelineChart
+                  title="Breathiness over time"
+                  subtitle="Shows where the tone sounded cleaner versus more airy during the session."
+                  values={derived.breathiness}
+                  stroke="#ea580c"
+                  fill="#fed7aa"
+                  valueLabel="%"
+                  emptyLabel="No breathiness data"
+                />
+                <TimelineChart
+                  title="Pitch confidence over time"
+                  subtitle="Shows how clearly the app could lock onto your sung note across the session."
+                  values={derived.pitchConfidence}
+                  stroke="#16a34a"
+                  fill="#bbf7d0"
+                  valueLabel="%"
+                  emptyLabel="No pitch data"
+                />
+                <TimelineChart
+                  title="Sustain timeline"
+                  subtitle="Shows where you held notes longer and where the sound dropped away more quickly."
+                  values={derived.sustain}
+                  stroke="#7c3aed"
+                  fill="#ddd6fe"
+                  valueLabel="s"
+                  emptyLabel="No sustain data"
+                />
+              </div>
+            )}
+
+            <div className="grid gap-6 lg:grid-cols-3">
+              <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm lg:col-span-2">
+                <h2 className="text-xl font-semibold text-slate-900">What went well</h2>
+                <div className="mt-4 space-y-4">
+                  {report.strengths.map((item, index) => (
+                    <div key={`${item.title}-${index}`} className="rounded-xl border border-emerald-100 bg-emerald-50 p-4">
+                      <div className="font-semibold text-emerald-900">{item.title}</div>
+                      <div className="mt-1 text-sm leading-6 text-emerald-900/80">{item.detail}</div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
+              <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                <h2 className="text-xl font-semibold text-slate-900">Session snapshot</h2>
+                <div className="mt-4 space-y-3 text-sm text-slate-700">
+                  <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                    <span>Session length</span>
+                    <span className="font-semibold">{derived?.durationLabel ?? '-'}</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                    <span>Best note hold</span>
+                    <span className="font-semibold">{artifact.payload.summary.maxSustainSeconds.toFixed(1)}s</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                    <span>Tuning accuracy</span>
+                    <span className="font-semibold">{Math.round(artifact.payload.summary.tuningAccuracy * 100)}%</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                    <span>Pitch stability</span>
+                    <span className="font-semibold">{Math.round(artifact.payload.summary.avgStability * 100)}%</span>
+                  </div>
+                  {artifact.payload.practiceMode === 'assisted' && (
+                    <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                      <span>Follow accuracy</span>
+                      <span className="font-semibold">{derived?.followPercent ?? 0}%</span>
+                    </div>
+                  )}
+                </div>
+              </section>
+            </div>
+
+            <div className="grid gap-6 lg:grid-cols-2">
+              <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                <h2 className="text-xl font-semibold text-slate-900">What to focus on next</h2>
+                <div className="mt-4 space-y-4">
+                  {report.issues.map((item, index) => (
+                    <div key={`${item.title}-${index}`} className="rounded-xl border border-rose-100 bg-rose-50 p-4">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="font-semibold text-rose-900">{item.title}</div>
+                        <Badge variant="outline" className="capitalize">{item.severity}</Badge>
+                      </div>
+                      <div className="mt-1 text-sm leading-6 text-rose-900/80">{item.detail}</div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
+              <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                <h2 className="text-xl font-semibold text-slate-900">Best next actions</h2>
+                <div className="mt-4 space-y-4">
+                  {report.priority_improvements.map((item, index) => (
+                    <div key={`${item.title}-${index}`} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="font-semibold text-slate-900">{item.title}</div>
+                      <div className="mt-2 text-sm text-slate-700"><span className="font-medium">Do this:</span> {item.action}</div>
+                      <div className="mt-1 text-sm text-slate-700"><span className="font-medium">Why it matters:</span> {item.why}</div>
+                      {item.recommended_videos.length > 0 && (
+                        <div className="mt-4 rounded-lg border border-sky-100 bg-sky-50 p-3">
+                          <div className="text-xs font-semibold uppercase tracking-wide text-sky-900/70">Recommended videos</div>
+                          <div className="mt-3 space-y-3">
+                            {item.recommended_videos.map((video) => (
+                              <div key={video.id} className="rounded-lg border border-sky-100 bg-white p-3">
+                                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                                  <div>
+                                    <div className="font-medium text-slate-900">{video.title}</div>
+                                    <div className="text-xs text-slate-500">{video.course_title}</div>
+                                  </div>
+                                  <Button asChild size="sm" variant="outline">
+                                    <a href={video.url} target="_blank" rel="noreferrer">Open video</a>
+                                  </Button>
+                                </div>
+                                <div className="mt-2 text-sm text-slate-700">{video.reason}</div>
+                                <div className="mt-2 text-xs font-medium text-slate-500">{video.duration_minutes} min</div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </section>
+            </div>
+
+            <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+              <h2 className="text-xl font-semibold text-slate-900">Suggested practice plan</h2>
+              <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                {report.suggested_exercises.map((item, index) => (
+                  <div key={`${item.name}-${index}`} className="rounded-xl border border-sky-100 bg-sky-50 p-4">
+                    <div className="font-semibold text-sky-900">{item.name}</div>
+                    <div className="mt-1 text-sm leading-6 text-sky-900/80">{item.reason}</div>
+                    <div className="mt-3 text-xs font-semibold uppercase tracking-wide text-sky-900/70">
+                      {item.duration_minutes} minute practice block
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+              <h2 className="text-xl font-semibold text-slate-900">Moments worth noticing</h2>
+              <div className="mt-4 space-y-3">
+                {report.evidence.map((item, index) => (
+                  <div key={`${item.timestamp_seconds}-${index}`} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="font-semibold text-slate-900">{item.label}</div>
+                      <Badge variant="outline">{item.timestamp_seconds.toFixed(1)}s</Badge>
+                    </div>
+                    <div className="mt-2 text-sm leading-6 text-slate-700">{item.observation}</div>
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            {artifact.transcript && (
+              <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                <h2 className="text-xl font-semibold text-slate-900">Transcript</h2>
+                <p className="mt-4 whitespace-pre-wrap text-sm leading-7 text-slate-700">{artifact.transcript}</p>
+              </section>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}

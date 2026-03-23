@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { memo, useEffect, useMemo, useState } from 'react';
 import { noteNameToMidi } from '@/src/engine/assistedPractice';
 
 interface AssistedPianoRollProps {
@@ -18,7 +18,7 @@ interface RollPoint {
 const MIN_MIDI = 36; // C2
 const MAX_MIDI = 84; // C6
 
-export function AssistedPianoRoll({
+export const AssistedPianoRoll = memo(function AssistedPianoRoll({
   targetNoteName,
   detectedNoteName,
   isActive,
@@ -114,7 +114,7 @@ export function AssistedPianoRoll({
       </svg>
     </div>
   );
-}
+});
 
 function toPolyline(points: RollPoint[], historyMs: number, lane: 0 | 1): string | null {
   if (points.length < 2) return null;

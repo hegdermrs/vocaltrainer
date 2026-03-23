@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { memo, useEffect, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Music, ChevronLeft, ChevronRight } from 'lucide-react';
 import { EngineState } from '@/src/engine/types';
@@ -18,7 +18,7 @@ interface PitchDataPoint {
 const pitchHistory: PitchDataPoint[] = [];
 const MAX_HISTORY_SECONDS = 5;
 
-export function PitchModule({ state }: PitchModuleProps) {
+export const PitchModule = memo(function PitchModule({ state }: PitchModuleProps) {
   const hasPitch = state?.pitchHz && state?.noteName;
   const lastPitchRef = useRef<{
     pitchHz: number;
@@ -104,7 +104,7 @@ export function PitchModule({ state }: PitchModuleProps) {
       </CardContent>
     </Card>
   );
-}
+});
 
 
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { KeyboardShortcuts, MidiNumbers, Piano } from 'react-piano';
 
 interface BottomPianoProps {
@@ -20,7 +20,7 @@ const MAX_TRAIL = 10;
 const MIN_PLAY_INTERVAL_MS = 120;
 const NOTE_RELEASE_MS = 260;
 
-export function BottomPiano({ noteName, targetNoteName, playDetectedAudio = true }: BottomPianoProps) {
+export const BottomPiano = memo(function BottomPiano({ noteName, targetNoteName, playDetectedAudio = true }: BottomPianoProps) {
   const [trail, setTrail] = useState<NoteHit[]>([]);
   const [heldNote, setHeldNote] = useState<number | null>(null);
   const [width, setWidth] = useState(0);
@@ -210,7 +210,7 @@ export function BottomPiano({ noteName, targetNoteName, playDetectedAudio = true
       </div>
     </div>
   );
-}
+});
 
 function noteNameToMidi(noteName: string): number | null {
   const match = noteName.match(/^([A-G])([#b]?)(-?\d+)$/);

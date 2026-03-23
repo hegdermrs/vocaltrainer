@@ -1,5 +1,5 @@
 export type AssistedVoiceProfile = 'male' | 'female';
-export type AssistedExerciseId = 'sustain' | 'siren' | 'thirds' | 'fifths';
+export type AssistedExerciseId = 'three_tone' | 'five_tone' | 'octave' | 'mixed_octave' | 'long_arpeggio';
 
 export interface AssistedConfig {
   voiceProfile: AssistedVoiceProfile;
@@ -20,28 +20,34 @@ export interface AssistedSequence {
 }
 
 export const EXERCISE_OPTIONS: AssistedExerciseDefinition[] = [
-  { id: 'sustain', label: 'Sustain', description: 'Repeat tonic note holds.' },
-  { id: 'siren', label: 'Siren', description: 'Stepwise glide up and down an octave.' },
-  { id: 'thirds', label: '3rds', description: 'Diatonic third interval drill.' },
-  { id: 'fifths', label: '5ths', description: 'Diatonic fifth interval drill.' }
+  { id: 'three_tone', label: '3 Tone Scale', description: 'Three-note scale pattern moving across the full range.' },
+  { id: 'five_tone', label: '5 Tone Scale', description: 'Five-note scale pattern moving across the full range.' },
+  { id: 'octave', label: 'Octave Scale', description: 'Full octave scale pattern across the full range.' },
+  { id: 'mixed_octave', label: 'Mixed Octave Scale', description: 'Scale tones mixed with octave jumps across the full range.' },
+  { id: 'long_arpeggio', label: 'Long Arpeggio', description: 'Extended arpeggio pattern sweeping the full range.' }
 ];
 
 export const DEFAULT_ASSISTED_CONFIG: AssistedConfig = {
   voiceProfile: 'male',
   bpm: 80,
-  exerciseId: 'sustain',
+  exerciseId: 'three_tone',
   transposeSemitones: 0
 };
 
-const PROFILE_TONIC_MIDI: Record<AssistedVoiceProfile, number> = {
-  male: 48, // C3
-  female: 55 // G3
+const PROFILE_RANGES: Record<AssistedVoiceProfile, { low: number; high: number; label: string }> = {
+  male: {
+    low: noteNameToMidi('C2') ?? 36,
+    high: noteNameToMidi('E5') ?? 76,
+    label: 'C2-E5'
+  },
+  female: {
+    low: noteNameToMidi('A3') ?? 57,
+    high: noteNameToMidi('C6') ?? 84,
+    label: 'A3-C6'
+  }
 };
 
-const PROFILE_KEY_LABEL: Record<AssistedVoiceProfile, string> = {
-  male: 'C',
-  female: 'G'
-};
+const MAJOR_SCALE_INTERVALS = [0, 2, 4, 5, 7, 9, 11, 12];
 
 export function clampBpm(value: number): number {
   if (!Number.isFinite(value)) return DEFAULT_ASSISTED_CONFIG.bpm;
@@ -54,38 +60,60 @@ export function clampTranspose(value: number): number {
 }
 
 export function getExerciseSequence(config: AssistedConfig): AssistedSequence {
-  const tonicMidi = PROFILE_TONIC_MIDI[config.voiceProfile] + clampTranspose(config.transposeSemitones);
-  const notes = buildExerciseMidi(config.exerciseId, tonicMidi).map((midi) => midiToNoteName(midi));
-  const keyRoot = PROFILE_KEY_LABEL[config.voiceProfile];
-  const transposeLabel =
-    config.transposeSemitones === 0 ? '' : ` (${config.transposeSemitones > 0 ? '+' : ''}${config.transposeSemitones})`;
+  const range = PROFILE_RANGES[config.voiceProfile];
+  const transpose = clampTranspose(config.transposeSemitones);
+  const notes = buildPatternAcrossRange(config.exerciseId, range.low, range.high, transpose)
+    .map((midi) => midiToNoteName(midi));
   const exerciseLabel = EXERCISE_OPTIONS.find((item) => item.id === config.exerciseId)?.label ?? config.exerciseId;
+  const transposeLabel = transpose === 0 ? '' : ` (${transpose > 0 ? '+' : ''}${transpose})`;
+
   return {
-    label: `${exerciseLabel} - ${keyRoot} profile${transposeLabel}`,
+    label: `${exerciseLabel} - ${range.label}${transposeLabel}`,
     notes
   };
 }
 
-function buildExerciseMidi(exerciseId: AssistedExerciseId, tonicMidi: number): number[] {
-  const major = [0, 2, 4, 5, 7, 9, 11, 12];
+function buildPatternAcrossRange(
+  exerciseId: AssistedExerciseId,
+  lowMidi: number,
+  highMidi: number,
+  transpose: number
+): number[] {
+  const rootLow = lowMidi + transpose;
+  const rootHigh = highMidi + transpose;
+  const pattern = getPatternOffsets(exerciseId);
+  const maxOffset = Math.max(...pattern);
+  const roots: number[] = [];
+
+  for (let root = rootLow; root + maxOffset <= rootHigh; root += 1) {
+    roots.push(root);
+  }
+
+  if (roots.length === 0) {
+    roots.push(Math.max(rootLow, rootHigh - maxOffset));
+  }
+
+  return roots.flatMap((root) =>
+    pattern
+      .map((offset) => root + offset)
+      .filter((midi) => midi >= rootLow && midi <= rootHigh)
+  );
+}
+
+function getPatternOffsets(exerciseId: AssistedExerciseId): number[] {
   switch (exerciseId) {
-    case 'sustain':
-      return Array.from({ length: 8 }, () => tonicMidi);
-    case 'siren': {
-      const up = major.map((offset) => tonicMidi + offset);
-      const down = [...major].reverse().slice(1).map((offset) => tonicMidi + offset);
-      return [...up, ...down];
-    }
-    case 'thirds': {
-      const idx = [0, 2, 1, 3, 2, 4, 3, 5, 4, 6, 5, 7, 6, 7, 5, 3, 1, 0];
-      return idx.map((i) => tonicMidi + major[i]);
-    }
-    case 'fifths': {
-      const idx = [0, 4, 1, 5, 2, 6, 3, 7, 4, 7, 3, 6, 2, 5, 1, 4, 0];
-      return idx.map((i) => tonicMidi + major[i]);
-    }
+    case 'three_tone':
+      return [0, 2, 4, 2, 0];
+    case 'five_tone':
+      return [0, 2, 4, 5, 7, 5, 4, 2, 0];
+    case 'octave':
+      return [...MAJOR_SCALE_INTERVALS, ...[11, 9, 7, 5, 4, 2, 0]];
+    case 'mixed_octave':
+      return [0, 12, 2, 12, 4, 12, 5, 12, 7, 12, 7, 5, 4, 2, 0];
+    case 'long_arpeggio':
+      return [0, 4, 7, 12, 7, 4, 0, 4, 7, 12, 16, 12, 7, 4, 0];
     default:
-      return [tonicMidi];
+      return [0];
   }
 }
 

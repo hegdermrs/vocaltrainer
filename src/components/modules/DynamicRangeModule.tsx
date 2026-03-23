@@ -1,5 +1,6 @@
-'use client';
+﻿'use client';
 
+import { memo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Waves } from 'lucide-react';
 import { EngineState } from '@/src/engine/types';
@@ -9,23 +10,20 @@ interface DynamicRangeModuleProps {
   state: EngineState | null;
 }
 
-export function DynamicRangeModule({ state }: DynamicRangeModuleProps) {
+export const DynamicRangeModule = memo(function DynamicRangeModule({ state }: DynamicRangeModuleProps) {
   const rangeDb = state?.dynamicRangeDb;
   const stdDb = state?.loudnessStdDb;
 
-  const getLabel = () => {
-    if (rangeDb === undefined) return '—';
-    if (rangeDb < 6) return 'Too flat';
-    if (rangeDb < 12) return 'Balanced';
-    return 'Too wide';
-  };
-
-  const getColor = () => {
-    if (rangeDb === undefined) return 'text-slate-400';
-    if (rangeDb < 6) return 'text-amber-600';
-    if (rangeDb < 12) return 'text-green-600';
-    return 'text-red-600';
-  };
+  const label =
+    rangeDb === undefined ? '—' : rangeDb < 6 ? 'Too flat' : rangeDb < 12 ? 'Balanced' : 'Too wide';
+  const color =
+    rangeDb === undefined
+      ? 'text-slate-400'
+      : rangeDb < 6
+        ? 'text-amber-600'
+        : rangeDb < 12
+          ? 'text-green-600'
+          : 'text-red-600';
 
   return (
     <Card>
@@ -40,18 +38,16 @@ export function DynamicRangeModule({ state }: DynamicRangeModuleProps) {
         <CardDescription>Quiet vs loud span over recent seconds</CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="space-y-4">
-          <div className="text-center">
-            <div className={`text-6xl font-bold ${getColor()}`}>{getLabel()}</div>
-            <div className="mt-2 text-sm text-muted-foreground">
-              Range: {rangeDb !== undefined ? `${rangeDb.toFixed(1)} dB` : '—'}
-            </div>
-            <div className="mt-1 text-sm text-muted-foreground">
-              Loudness std: {stdDb !== undefined ? `${stdDb.toFixed(1)} dB` : '—'}
-            </div>
+        <div className="space-y-4 text-center">
+          <div className={`text-6xl font-bold ${color}`}>{label}</div>
+          <div className="text-sm text-muted-foreground">
+            Range: {rangeDb !== undefined ? `${rangeDb.toFixed(1)} dB` : '—'}
+          </div>
+          <div className="text-sm text-muted-foreground">
+            Loudness std: {stdDb !== undefined ? `${stdDb.toFixed(1)} dB` : '—'}
           </div>
         </div>
       </CardContent>
     </Card>
   );
-}
+});

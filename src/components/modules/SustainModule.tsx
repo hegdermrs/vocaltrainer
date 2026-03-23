@@ -1,5 +1,6 @@
-'use client';
+﻿'use client';
 
+import { memo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Timer } from 'lucide-react';
 import { EngineState } from '@/src/engine/types';
@@ -11,7 +12,7 @@ interface SustainModuleProps {
   state: EngineState | null;
 }
 
-export function SustainModule({ state }: SustainModuleProps) {
+export const SustainModule = memo(function SustainModule({ state }: SustainModuleProps) {
   const duration = state?.sustainSeconds ?? 0;
   const bestDuration = state?.bestSustainSeconds ?? 0;
   const isSustaining = state?.isSustaining ?? false;
@@ -30,42 +31,30 @@ export function SustainModule({ state }: SustainModuleProps) {
       </CardHeader>
       <CardContent>
         <div className="space-y-4">
-          <div className="flex justify-between items-center">
+          <div className="flex items-center justify-between">
             <span className="text-sm text-muted-foreground">Current:</span>
             <span className="text-2xl font-bold">{duration.toFixed(1)}s</span>
           </div>
-
-          <div className="flex justify-between items-center">
+          <div className="flex items-center justify-between">
             <span className="text-sm text-muted-foreground">Best:</span>
             <div className="flex items-center gap-2">
               <span className="text-xl font-semibold text-blue-600">{bestDuration.toFixed(1)}s</span>
               {bestDuration > 0 && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={resetBestSustain}
-                  className="h-6 px-2 text-xs"
-                >
+                <Button variant="ghost" size="sm" onClick={resetBestSustain} className="h-6 px-2 text-xs">
                   Reset
                 </Button>
               )}
             </div>
           </div>
-
-          <div className="flex justify-between items-center">
+          <div className="flex items-center justify-between">
             <span className="text-sm text-muted-foreground">Status:</span>
             <span className={`text-sm font-semibold ${isSustaining ? 'text-green-600' : 'text-slate-400'}`}>
               {isSustaining ? 'Sustaining' : 'Idle'}
             </span>
           </div>
-
-          {duration > 0 && (
-            <div className="text-center text-5xl font-bold tabular-nums text-slate-700">
-              {duration.toFixed(1)}s
-            </div>
-          )}
+          {duration > 0 && <div className="text-center text-5xl font-bold tabular-nums text-slate-700">{duration.toFixed(1)}s</div>}
         </div>
       </CardContent>
     </Card>
   );
-}
+});

@@ -132,4 +132,8 @@ export class AudioCapture {
   getAnalyserNode(): AnalyserNode | null {
     return this.analyserNode;
   }
+
+  getMediaStream(): MediaStream | null {
+    return this.micStream?.stream ?? null;
+  }
 }

@@ -42,4 +42,8 @@ export class VoiceAnalyzer {
   getAnalyserNode(): AnalyserNode | null {
     return this.audioCapture.getAnalyserNode();
   }
+
+  getMediaStream(): MediaStream | null {
+    return this.audioCapture.getMediaStream();
+  }
 }
