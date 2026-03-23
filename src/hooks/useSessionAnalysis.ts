@@ -14,6 +14,18 @@ function cacheReportInSessionStorage(artifact: SessionArtifact) {
   }
 }
 
+async function parseJsonResponse(response: Response): Promise<any> {
+  const raw = await response.text();
+  if (!raw.trim()) {
+    throw new Error('The server returned an empty response.');
+  }
+
+  try {
+    return JSON.parse(raw);
+  } catch {
+    throw new Error(`The server returned invalid JSON. Response preview: ${raw.slice(0, 200)}`);
+  }
+}
 function nextStatus(current: SessionAnalysisStatus): SessionAnalysisStatus {
   switch (current) {
     case 'uploading':
@@ -158,3 +170,4 @@ export function useSessionAnalysis() {
     openAnalysisReport
   };
 }
+

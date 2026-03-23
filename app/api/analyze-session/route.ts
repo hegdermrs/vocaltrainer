@@ -260,6 +260,21 @@ function buildAnalysisPrompt(
   ].join('\n');
 }
 
+function safeJsonParse<T>(raw: string, label: string): T {
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    throw new Error(`${label} was empty.`);
+  }
+
+  try {
+    return JSON.parse(trimmed) as T;
+  } catch {
+    const preview = trimmed.slice(0, 200);
+    throw new Error(
+      `${label} was not valid JSON.${preview ? ` Response preview: ${preview}` : ''}`
+    );
+  }
+}
 function extractOutputText(response: any): string {
   if (typeof response.output_text === 'string' && response.output_text.trim()) {
     return response.output_text;
@@ -298,7 +313,9 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Audio file exceeds the 25 MB limit.' }, { status: 400 });
     }
 
-    const normalizedPayload = payloadSchema.parse(JSON.parse(sessionJson)) as PracticeSessionPayload;
+    const normalizedPayload = payloadSchema.parse(
+      safeJsonParse<PracticeSessionPayload>(sessionJson, 'session_json')
+    ) as PracticeSessionPayload;
     const client = new OpenAI({ apiKey });
 
     const transcription = await client.audio.transcriptions.create({
@@ -330,7 +347,7 @@ export async function POST(request: Request) {
       throw new Error('The analysis model did not return structured output.');
     }
 
-    const report = JSON.parse(outputText) as VoiceSessionAnalysisReport;
+    const report = safeJsonParse<VoiceSessionAnalysisReport>(outputText, 'analysis model output');
 
     return NextResponse.json({
       sessionId: normalizedPayload.id,
@@ -349,3 +366,4 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
+
