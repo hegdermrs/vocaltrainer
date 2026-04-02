@@ -118,7 +118,7 @@ export function useSessionAnalysis() {
         method: 'POST',
         body: formData
       });
-      const data = await response.json();
+      const data = await parseJsonResponse(response);
       if (!response.ok) {
         throw new Error(data?.error || 'AI analysis failed.');
       }
@@ -170,4 +170,5 @@ export function useSessionAnalysis() {
     openAnalysisReport
   };
 }
+
 
