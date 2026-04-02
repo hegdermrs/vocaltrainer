@@ -82,15 +82,6 @@ export interface PracticeSessionPayload {
   recording?: RecordingMetadata;
 }
 
-export interface VoiceSessionAnalysisRecommendedVideo {
-  id: string;
-  title: string;
-  url: string;
-  reason: string;
-  duration_minutes: number;
-  course_title: string;
-}
-
 export interface VoiceSessionAnalysisReport {
   summary: string;
   strengths: Array<{
@@ -106,7 +97,6 @@ export interface VoiceSessionAnalysisReport {
     title: string;
     action: string;
     why: string;
-    recommended_videos: VoiceSessionAnalysisRecommendedVideo[];
   }>;
   suggested_exercises: Array<{
     name: string;
@@ -149,12 +139,4 @@ export interface SessionArtifactIndexItem {
   hasAudio: boolean;
   hasReport: boolean;
   reportSummary?: string;
-}
-
-export interface ThinkificSyncResponse {
-  syncedAt: string;
-  fetchedCourses: number;
-  fetchedLessons: number;
-  syncedVideos: number;
-  filteredVideos: number;
 }

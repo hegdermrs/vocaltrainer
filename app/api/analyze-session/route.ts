@@ -5,7 +5,6 @@ import {
   PracticeSessionPayload,
   VoiceSessionAnalysisReport
 } from '@/src/analysis/types';
-import { selectThinkificCandidates } from '@/src/server/thinkificCatalog';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -119,25 +118,9 @@ const reportSchema = {
         properties: {
           title: { type: 'string' },
           action: { type: 'string' },
-          why: { type: 'string' },
-          recommended_videos: {
-            type: 'array',
-            items: {
-              type: 'object',
-              additionalProperties: false,
-              properties: {
-                id: { type: 'string' },
-                title: { type: 'string' },
-                url: { type: 'string' },
-                reason: { type: 'string' },
-                duration_minutes: { type: 'number' },
-                course_title: { type: 'string' }
-              },
-              required: ['id', 'title', 'url', 'reason', 'duration_minutes', 'course_title']
-            }
-          }
+          why: { type: 'string' }
         },
-        required: ['title', 'action', 'why', 'recommended_videos']
+        required: ['title', 'action', 'why']
       }
     },
     suggested_exercises: {
@@ -215,11 +198,7 @@ function computeQuickStats(payload: PracticeSessionPayload) {
   };
 }
 
-function buildAnalysisPrompt(
-  payload: PracticeSessionPayload,
-  transcript: string,
-  recommendedVideos: Awaited<ReturnType<typeof selectThinkificCandidates>>
-): string {
+function buildAnalysisPrompt(payload: PracticeSessionPayload, transcript: string): string {
   const stats = computeQuickStats(payload);
   const compactFrames = payload.frames.slice(0, 2400);
 
@@ -235,13 +214,7 @@ function buildAnalysisPrompt(
     'Do not mention missing telemetry unless it materially limits your confidence.',
     'Prefer concrete next steps over generic encouragement.',
     'For suggested_exercises, choose short, practical drills. duration_minutes should usually be between 3 and 12.',
-    'For each priority improvement, include 0 to 2 recommended_videos chosen only from the provided Thinkific candidates.',
-    'Only use exact video ids, titles, course titles, durations, and urls from the candidate list. Do not invent or modify links.',
-    'Use recommended_videos only when they directly help with that improvement. If nothing fits, return an empty array.',
     'For scores, think of them as student-friendly coaching scores from 0 to 100.',
-    '',
-    'Thinkific recommendation candidates:',
-    JSON.stringify(recommendedVideos),
     '',
     'Session summary:',
     JSON.stringify(payload.summary),
@@ -275,6 +248,7 @@ function safeJsonParse<T>(raw: string, label: string): T {
     );
   }
 }
+
 function extractOutputText(response: any): string {
   if (typeof response.output_text === 'string' && response.output_text.trim()) {
     return response.output_text;
@@ -323,15 +297,10 @@ export async function POST(request: Request) {
       model: process.env.OPENAI_TRANSCRIPTION_MODEL || 'gpt-4o-mini-transcribe'
     });
     const transcript = typeof transcription === 'string' ? transcription : transcription.text ?? '';
-    const thinkificCandidates = await selectThinkificCandidates({
-      payload: normalizedPayload,
-      transcript,
-      limit: 24
-    });
 
     const analysisResponse = await client.responses.create({
       model: process.env.OPENAI_ANALYSIS_MODEL || 'gpt-4.1-mini',
-      input: buildAnalysisPrompt(normalizedPayload, transcript, thinkificCandidates),
+      input: buildAnalysisPrompt(normalizedPayload, transcript),
       text: {
         format: {
           type: 'json_schema',
@@ -366,4 +335,3 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
-

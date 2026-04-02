@@ -355,28 +355,7 @@ export default function AnalysisPage() {
                       <div className="font-semibold text-slate-900">{item.title}</div>
                       <div className="mt-2 text-sm text-slate-700"><span className="font-medium">Do this:</span> {item.action}</div>
                       <div className="mt-1 text-sm text-slate-700"><span className="font-medium">Why it matters:</span> {item.why}</div>
-                      {item.recommended_videos.length > 0 && (
-                        <div className="mt-4 rounded-lg border border-sky-100 bg-sky-50 p-3">
-                          <div className="text-xs font-semibold uppercase tracking-wide text-sky-900/70">Recommended videos</div>
-                          <div className="mt-3 space-y-3">
-                            {item.recommended_videos.map((video) => (
-                              <div key={video.id} className="rounded-lg border border-sky-100 bg-white p-3">
-                                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                                  <div>
-                                    <div className="font-medium text-slate-900">{video.title}</div>
-                                    <div className="text-xs text-slate-500">{video.course_title}</div>
-                                  </div>
-                                  <Button asChild size="sm" variant="outline">
-                                    <a href={video.url} target="_blank" rel="noreferrer">Open video</a>
-                                  </Button>
-                                </div>
-                                <div className="mt-2 text-sm text-slate-700">{video.reason}</div>
-                                <div className="mt-2 text-xs font-medium text-slate-500">{video.duration_minutes} min</div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
+
                     </div>
                   ))}
                 </div>
@@ -425,3 +404,4 @@ export default function AnalysisPage() {
     </div>
   );
 }
+
