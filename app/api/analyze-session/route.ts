@@ -268,36 +268,49 @@ function extractOutputText(response: any): string {
 
 export async function POST(request: Request) {
   try {
+    console.log('[analyze-session] checking OpenAI config');
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
-      return NextResponse.json({ error: 'OPENAI_API_KEY is not configured.' }, { status: 500 });
+      console.log('[analyze-session] returning success response');
+    return NextResponse.json({ error: 'OPENAI_API_KEY is not configured.' }, { status: 500 });
     }
 
+    console.log('[analyze-session] parsing multipart form data');
     const formData = await request.formData();
+    console.log('[analyze-session] multipart form data parsed');
     const audioFile = formData.get('audio');
+    console.log('[analyze-session] extracted audio field', { hasAudio: audioFile instanceof File, contentType: request.headers.get('content-type') });
     const sessionJson = formData.get('session_json');
 
     if (!(audioFile instanceof File)) {
-      return NextResponse.json({ error: 'Audio file is required.' }, { status: 400 });
+      console.log('[analyze-session] returning success response');
+    return NextResponse.json({ error: 'Audio file is required.' }, { status: 400 });
     }
     if (typeof sessionJson !== 'string') {
-      return NextResponse.json({ error: 'session_json is required.' }, { status: 400 });
+      console.log('[analyze-session] returning success response');
+    return NextResponse.json({ error: 'session_json is required.' }, { status: 400 });
     }
     if (audioFile.size > 25 * 1024 * 1024) {
-      return NextResponse.json({ error: 'Audio file exceeds the 25 MB limit.' }, { status: 400 });
+      console.log('[analyze-session] returning success response');
+    return NextResponse.json({ error: 'Audio file exceeds the 25 MB limit.' }, { status: 400 });
     }
 
+    console.log('[analyze-session] validating session payload');
     const normalizedPayload = payloadSchema.parse(
       safeJsonParse<PracticeSessionPayload>(sessionJson, 'session_json')
     ) as PracticeSessionPayload;
+    console.log('[analyze-session] payload validated', { sessionId: normalizedPayload.id, audioSize: audioFile.size, audioType: audioFile.type });
     const client = new OpenAI({ apiKey });
 
+    console.log('[analyze-session] starting transcription');
     const transcription = await client.audio.transcriptions.create({
       file: audioFile,
       model: process.env.OPENAI_TRANSCRIPTION_MODEL || 'gpt-4o-mini-transcribe'
     });
     const transcript = typeof transcription === 'string' ? transcription : transcription.text ?? '';
+    console.log('[analyze-session] transcription complete', { transcriptLength: transcript.length });
 
+    console.log('[analyze-session] starting structured analysis');
     const analysisResponse = await client.responses.create({
       model: process.env.OPENAI_ANALYSIS_MODEL || 'gpt-4.1-mini',
       input: buildAnalysisPrompt(normalizedPayload, transcript),
@@ -311,13 +324,16 @@ export async function POST(request: Request) {
       }
     });
 
+    console.log('[analyze-session] structured analysis complete');
     const outputText = extractOutputText(analysisResponse);
     if (!outputText) {
       throw new Error('The analysis model did not return structured output.');
     }
 
     const report = safeJsonParse<VoiceSessionAnalysisReport>(outputText, 'analysis model output');
+    console.log('[analyze-session] report parsed successfully');
 
+    console.log('[analyze-session] returning success response');
     return NextResponse.json({
       sessionId: normalizedPayload.id,
       transcript,
@@ -325,13 +341,15 @@ export async function POST(request: Request) {
       normalizedSession: normalizedPayload
     });
   } catch (error) {
-    console.error('AI session analysis failed:', error);
+    console.error('[analyze-session] failed:', error);
     const message = error instanceof z.ZodError
       ? `Invalid session payload: ${error.issues[0]?.message ?? 'unknown schema error'}`
       : error instanceof Error
         ? error.message
         : 'Unknown analysis failure';
 
+    console.log('[analyze-session] returning success response');
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
+
