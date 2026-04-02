@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation';
 import { getSessionArtifact, listSessionArtifacts, saveSessionArtifact } from '@/src/analysis/storage';
 import { SessionArtifact, SessionArtifactIndexItem, SessionAnalysisStatus } from '@/src/analysis/types';
 
+const MAX_NETLIFY_AUDIO_UPLOAD_BYTES = 4 * 1024 * 1024;
+
 function cacheReportInSessionStorage(artifact: SessionArtifact) {
   if (typeof window === 'undefined') return;
   try {
@@ -26,6 +28,7 @@ async function parseJsonResponse(response: Response): Promise<any> {
     throw new Error(`The server returned invalid JSON. Response preview: ${raw.slice(0, 200)}`);
   }
 }
+
 function nextStatus(current: SessionAnalysisStatus): SessionAnalysisStatus {
   switch (current) {
     case 'uploading':
@@ -88,6 +91,11 @@ export function useSessionAnalysis() {
     }
     if (!artifact.recording?.blob) {
       alert('This session does not have a saved audio recording to upload. Please record a new session and try again.');
+      return;
+    }
+    if (artifact.recording.blob.size > MAX_NETLIFY_AUDIO_UPLOAD_BYTES) {
+      const sizeMb = (artifact.recording.blob.size / (1024 * 1024)).toFixed(1);
+      alert(`This recording is ${sizeMb} MB, which is too large for reliable AI analysis on Netlify right now. Please use a shorter recording for now.`);
       return;
     }
 
@@ -170,5 +178,3 @@ export function useSessionAnalysis() {
     openAnalysisReport
   };
 }
-
-
