@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { getSessionArtifact, listSessionArtifacts, saveSessionArtifact } from '@/src/analysis/storage';
 import { SessionArtifact, SessionArtifactIndexItem, SessionAnalysisStatus } from '@/src/analysis/types';
 
-const MAX_NETLIFY_AUDIO_UPLOAD_BYTES = 4 * 1024 * 1024;
+const MAX_NETLIFY_AUDIO_UPLOAD_BYTES = 3 * 1024 * 1024;
 
 function cacheReportInSessionStorage(artifact: SessionArtifact) {
   if (typeof window === 'undefined') return;
@@ -19,7 +19,7 @@ function cacheReportInSessionStorage(artifact: SessionArtifact) {
 async function parseJsonResponse(response: Response): Promise<any> {
   const raw = await response.text();
   if (!raw.trim()) {
-    throw new Error('The server returned an empty response.');
+    throw new Error('The server returned an empty response (status ' + response.status + (response.statusText ? ' ' + response.statusText : '') + ').');
   }
 
   try {
@@ -95,7 +95,7 @@ export function useSessionAnalysis() {
     }
     if (artifact.recording.blob.size > MAX_NETLIFY_AUDIO_UPLOAD_BYTES) {
       const sizeMb = (artifact.recording.blob.size / (1024 * 1024)).toFixed(1);
-      alert(`This recording is ${sizeMb} MB, which is too large for reliable AI analysis on Netlify right now. Please use a shorter recording for now.`);
+      alert(`This recording is ${sizeMb} MB, which is too large for reliable AI analysis on Netlify right now. Try a shorter recording for now.`);
       return;
     }
 
@@ -178,3 +178,4 @@ export function useSessionAnalysis() {
     openAnalysisReport
   };
 }
+
