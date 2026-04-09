@@ -27,15 +27,6 @@ async function parseJsonResponse(response: Response): Promise<any> {
   }
 }
 
-function getN8nWebhookUrl(): string {
-  const url = process.env.NEXT_PUBLIC_N8N_ANALYZE_WEBHOOK_URL;
-  if (!url) {
-    throw new Error('AI analysis webhook is not configured yet. Add NEXT_PUBLIC_N8N_ANALYZE_WEBHOOK_URL.');
-  }
-
-  return url;
-}
-
 function buildAudioFile(artifact: SessionArtifact): File {
   const recording = artifact.recording;
   if (!recording?.blob) {
@@ -54,7 +45,7 @@ function buildAudioFile(artifact: SessionArtifact): File {
   return new File([recording.blob], `session-${artifact.id}.${extension}`, { type: recording.mimeType });
 }
 
-function buildN8nRequestBody(artifact: SessionArtifact): FormData {
+function buildAnalysisRequestBody(artifact: SessionArtifact): FormData {
   const formData = new FormData();
   const audioFile = buildAudioFile(artifact);
 
@@ -165,9 +156,9 @@ export function useSessionAnalysis() {
       };
       await persistArtifact(workingArtifact);
 
-      const response = await fetch(getN8nWebhookUrl(), {
+      const response = await fetch('/api/analyze-session', {
         method: 'POST',
-        body: buildN8nRequestBody(artifact)
+        body: buildAnalysisRequestBody(artifact)
       });
 
       const data = await parseJsonResponse(response);
