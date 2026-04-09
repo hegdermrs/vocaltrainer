@@ -3,8 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { getSessionArtifact, listSessionArtifacts, saveSessionArtifact } from '@/src/analysis/storage';
-import { SessionArtifact, SessionArtifactIndexItem, SessionAnalysisStatus } from '@/src/analysis/types';
-import { getSupabaseBrowserBucket, getSupabaseBrowserClient } from '@/src/lib/supabaseBrowser';
+import { SessionArtifact, SessionArtifactIndexItem, SessionAnalysisStatus, VoiceSessionAnalysisReport } from '@/src/analysis/types';
 
 function cacheReportInSessionStorage(artifact: SessionArtifact) {
   if (typeof window === 'undefined') return;
@@ -28,55 +27,70 @@ async function parseJsonResponse(response: Response): Promise<any> {
   }
 }
 
-function buildStoragePath(sessionId: number, mimeType: string): string {
-  const extension =
-    mimeType.includes('mp4')
-      ? 'm4a'
-      : mimeType.includes('mpeg')
-        ? 'mp3'
-        : mimeType.includes('ogg')
-          ? 'ogg'
-          : 'webm';
+function getN8nWebhookUrl(): string {
+  const url = process.env.NEXT_PUBLIC_N8N_ANALYZE_WEBHOOK_URL;
+  if (!url) {
+    throw new Error('AI analysis webhook is not configured yet. Add NEXT_PUBLIC_N8N_ANALYZE_WEBHOOK_URL.');
+  }
 
-  return `practice-sessions/${sessionId}/${Date.now()}.${extension}`;
+  return url;
 }
 
-async function uploadRecordingToSupabase(artifact: SessionArtifact): Promise<{ bucket: string; path: string; uploadedAt: string; }> {
+function buildAudioFile(artifact: SessionArtifact): File {
   const recording = artifact.recording;
   if (!recording?.blob) {
     throw new Error('This session does not have a saved audio recording to upload. Please record a new session and try again.');
   }
 
-  const supabase = getSupabaseBrowserClient();
-  const bucket = getSupabaseBrowserBucket();
-  const path = buildStoragePath(artifact.id, recording.mimeType);
-  const file = new File([recording.blob], path.split('/').pop() || `session-${artifact.id}.webm`, { type: recording.mimeType });
+  const extension =
+    recording.mimeType.includes('mp4')
+      ? 'm4a'
+      : recording.mimeType.includes('mpeg')
+        ? 'mp3'
+        : recording.mimeType.includes('ogg')
+          ? 'ogg'
+          : 'webm';
 
-  const { error } = await supabase.storage.from(bucket).upload(path, file, {
-    contentType: recording.mimeType,
-    upsert: false
-  });
+  return new File([recording.blob], `session-${artifact.id}.${extension}`, { type: recording.mimeType });
+}
 
-  if (error) {
-    throw new Error(error.message || 'Audio upload failed.');
-  }
+function buildN8nRequestBody(artifact: SessionArtifact): FormData {
+  const formData = new FormData();
+  const audioFile = buildAudioFile(artifact);
 
-  return {
-    bucket,
-    path,
-    uploadedAt: new Date().toISOString()
-  };
+  formData.append('audio', audioFile);
+  formData.append('session_id', String(artifact.id));
+  formData.append('timestamp', artifact.timestamp);
+  formData.append('mime_type', audioFile.type);
+  formData.append('session_json', JSON.stringify(artifact.payload));
+
+  return formData;
 }
 
 function nextStatus(current: SessionAnalysisStatus): SessionAnalysisStatus {
   switch (current) {
     case 'uploading':
-      return 'transcribing';
-    case 'transcribing':
       return 'analyzing';
     default:
       return current;
   }
+}
+
+function extractReport(data: any): {
+  transcript?: string;
+  report: VoiceSessionAnalysisReport;
+  normalizedSession?: SessionArtifact['payload'];
+} {
+  const report = data?.report ?? data?.analysisReport ?? data?.analysis_report;
+  if (!report) {
+    throw new Error('The analysis webhook did not return a report.');
+  }
+
+  return {
+    transcript: data?.transcript ?? data?.transcription ?? undefined,
+    report,
+    normalizedSession: data?.normalizedSession ?? data?.normalized_session ?? undefined
+  };
 }
 
 export function useSessionAnalysis() {
@@ -128,7 +142,7 @@ export function useSessionAnalysis() {
       openAnalysisReport(targetId);
       return;
     }
-    if (!artifact.recording?.blob && !artifact.recording?.storagePath) {
+    if (!artifact.recording?.blob) {
       alert('This session does not have a saved audio recording to upload. Please record a new session and try again.');
       return;
     }
@@ -144,23 +158,6 @@ export function useSessionAnalysis() {
     try {
       await persistArtifact(workingArtifact);
 
-      if (!workingArtifact.recording?.storagePath) {
-        const uploaded = await uploadRecordingToSupabase(workingArtifact);
-        workingArtifact = {
-          ...workingArtifact,
-          recording: workingArtifact.recording
-            ? {
-                ...workingArtifact.recording,
-                storageBucket: uploaded.bucket,
-                storagePath: uploaded.path,
-                uploadedAt: uploaded.uploadedAt
-              }
-            : workingArtifact.recording,
-          updatedAt: new Date().toISOString()
-        };
-        await persistArtifact(workingArtifact);
-      }
-
       workingArtifact = {
         ...workingArtifact,
         analysisStatus: nextStatus(workingArtifact.analysisStatus),
@@ -168,43 +165,28 @@ export function useSessionAnalysis() {
       };
       await persistArtifact(workingArtifact);
 
-      const response = await fetch('/api/analyze-session', {
+      const response = await fetch(getN8nWebhookUrl(), {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          session_json: artifact.payload,
-          storage_bucket: workingArtifact.recording?.storageBucket,
-          storage_path: workingArtifact.recording?.storagePath,
-          mime_type: artifact.recording?.mimeType
-        })
+        body: buildN8nRequestBody(artifact)
       });
+
       const data = await parseJsonResponse(response);
       if (!response.ok) {
         throw new Error(data?.error || 'AI analysis failed.');
       }
 
-      workingArtifact = {
-        ...workingArtifact,
-        analysisStatus: nextStatus(workingArtifact.analysisStatus),
-        updatedAt: new Date().toISOString()
-      };
-      await persistArtifact(workingArtifact);
+      const result = extractReport(data);
 
       const completedArtifact: SessionArtifact = {
         ...workingArtifact,
-        payload: data.normalizedSession ?? artifact.payload,
-        transcript: data.transcript,
-        analysisReport: data.report,
+        payload: result.normalizedSession ?? artifact.payload,
+        transcript: result.transcript,
+        analysisReport: result.report,
         analysisStatus: 'complete',
         recording: workingArtifact.recording
           ? {
               ...workingArtifact.recording,
-              blob: undefined,
-              storageBucket: undefined,
-              storagePath: undefined,
-              uploadedAt: undefined
+              blob: undefined
             }
           : undefined,
         errorMessage: undefined,

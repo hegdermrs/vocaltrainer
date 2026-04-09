@@ -1,4 +1,4 @@
-﻿export type SessionAnalysisStatus =
+export type SessionAnalysisStatus =
   | 'idle'
   | 'uploading'
   | 'transcribing'
@@ -123,9 +123,6 @@ export interface SessionArtifact {
   payload: PracticeSessionPayload;
   recording?: RecordingMetadata & {
     blob?: Blob;
-    storageBucket?: string;
-    storagePath?: string;
-    uploadedAt?: string;
   };
   analysisStatus: SessionAnalysisStatus;
   transcript?: string;

@@ -1,4 +1,4 @@
-﻿export type AssistedVoiceProfile = 'male' | 'female';
+export type AssistedVoiceProfile = 'male' | 'female';
 export type AssistedExerciseId = 'three_tone' | 'five_tone' | 'octave' | 'mixed_octave' | 'long_arpeggio';
 
 export interface AssistedConfig {
@@ -83,6 +83,16 @@ function buildPatternAcrossRange(
 ): number[] {
   const rootLow = lowMidi + transpose;
   const rootHigh = highMidi + transpose;
+
+  if (exerciseId === 'long_arpeggio') {
+    return LONG_ARPEGGIO_SEQUENCE
+      .split(/\s+/)
+      .map((noteName) => noteNameToMidi(noteName))
+      .filter((midi): midi is number => midi !== null)
+      .map((midi) => midi + transpose)
+      .filter((midi) => midi >= rootLow && midi <= rootHigh);
+  }
+
   const pattern = getPatternOffsets(exerciseId);
   const maxOffset = Math.max(...pattern);
   const roots: number[] = [];
@@ -95,23 +105,21 @@ function buildPatternAcrossRange(
     roots.push(Math.max(rootLow, rootHigh - maxOffset));
   }
 
-  return roots.flatMap((root) => {
+  return roots.flatMap((root, index) => {
     const phrase = pattern
       .map((offset) => root + offset)
       .filter((midi) => midi >= rootLow && midi <= rootHigh);
 
-    if (exerciseId === 'long_arpeggio' || phrase.length === 0) {
+    if (phrase.length === 0) {
+      return [];
+    }
+
+    if (index === roots.length - 1) {
       return phrase;
     }
 
-    return [phrase[0], ...phrase];
+    return [...phrase, roots[index + 1]];
   });
-}
-
-function transposeNoteName(noteName: string, semitones: number): string {
-  const midi = noteNameToMidi(noteName);
-  if (midi === null) return noteName;
-  return midiToNoteName(midi + semitones);
 }
 
 function getPatternOffsets(exerciseId: AssistedExerciseId): number[] {
@@ -125,7 +133,7 @@ function getPatternOffsets(exerciseId: AssistedExerciseId): number[] {
     case 'mixed_octave':
       return [0, 12, 2, 12, 4, 12, 5, 12, 7, 12, 7, 5, 4, 2, 0];
     case 'long_arpeggio':
-      return [0, 4, 7, 12, 7, 4, 0, 4, 7, 12, 16, 12, 7, 4, 0];
+      return [0];
     default:
       return [0];
   }
@@ -210,5 +218,3 @@ export function evaluateAssistedFollow(
   }
   return { eligible: true, hit: false, status: 'off' };
 }
-
-
