@@ -5,6 +5,7 @@ import {
   PracticeSessionPayload,
   VoiceSessionAnalysisReport
 } from '@/src/analysis/types';
+import { getSupabaseAdminClient, getSupabaseStorageBucket } from '@/src/server/supabaseStorage';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -78,6 +79,13 @@ const payloadSchema = z.object({
     sizeBytes: z.number(),
     durationSeconds: z.number()
   }).optional()
+});
+
+const requestBodySchema = z.object({
+  session_json: z.union([z.string(), payloadSchema]),
+  storage_bucket: z.string().optional(),
+  storage_path: z.string().min(1),
+  mime_type: z.string().optional()
 });
 
 const reportSchema = {
@@ -266,40 +274,67 @@ function extractOutputText(response: any): string {
   return '';
 }
 
+async function fetchAudioFileFromStorage(storagePath: string, storageBucket?: string, mimeType?: string): Promise<File> {
+  const bucket = storageBucket || getSupabaseStorageBucket();
+  const supabase = getSupabaseAdminClient();
+  const { data, error } = await supabase.storage.from(bucket).download(storagePath);
+
+  if (error || !data) {
+    throw new Error(error?.message || 'Could not download uploaded audio from storage.');
+  }
+
+  const fileName = storagePath.split('/').pop() || 'practice-audio.webm';
+  const inferredType = mimeType || data.type || 'audio/webm';
+  return new File([data], fileName, { type: inferredType });
+}
+
+async function cleanupUploadedAudio(storagePath?: string, storageBucket?: string) {
+  if (!storagePath) return;
+
+  try {
+    const bucket = storageBucket || getSupabaseStorageBucket();
+    const supabase = getSupabaseAdminClient();
+    await supabase.storage.from(bucket).remove([storagePath]);
+  } catch (error) {
+    console.warn('[analyze-session] could not delete analyzed audio from storage:', error);
+  }
+}
+
 export async function POST(request: Request) {
+  let storagePathForCleanup: string | undefined;
+  let storageBucketForCleanup: string | undefined;
+
+  console.log('[analyze-session] entered route');
   try {
     console.log('[analyze-session] checking OpenAI config');
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
-      console.log('[analyze-session] returning success response');
-    return NextResponse.json({ error: 'OPENAI_API_KEY is not configured.' }, { status: 500 });
+      return NextResponse.json({ error: 'OPENAI_API_KEY is not configured.' }, { status: 500 });
     }
 
-    console.log('[analyze-session] parsing multipart form data');
-    const formData = await request.formData();
-    console.log('[analyze-session] multipart form data parsed');
-    const audioFile = formData.get('audio');
-    console.log('[analyze-session] extracted audio field', { hasAudio: audioFile instanceof File, contentType: request.headers.get('content-type') });
-    const sessionJson = formData.get('session_json');
-
-    if (!(audioFile instanceof File)) {
-      console.log('[analyze-session] returning success response');
-    return NextResponse.json({ error: 'Audio file is required.' }, { status: 400 });
-    }
-    if (typeof sessionJson !== 'string') {
-      console.log('[analyze-session] returning success response');
-    return NextResponse.json({ error: 'session_json is required.' }, { status: 400 });
-    }
-    if (audioFile.size > 25 * 1024 * 1024) {
-      console.log('[analyze-session] returning success response');
-    return NextResponse.json({ error: 'Audio file exceeds the 25 MB limit.' }, { status: 400 });
-    }
+    console.log('[analyze-session] parsing JSON request body');
+    const body = requestBodySchema.parse(await request.json());
+    console.log('[analyze-session] JSON request body parsed');
 
     console.log('[analyze-session] validating session payload');
     const normalizedPayload = payloadSchema.parse(
-      safeJsonParse<PracticeSessionPayload>(sessionJson, 'session_json')
+      typeof body.session_json === 'string'
+        ? safeJsonParse<PracticeSessionPayload>(body.session_json, 'session_json')
+        : body.session_json
     ) as PracticeSessionPayload;
-    console.log('[analyze-session] payload validated', { sessionId: normalizedPayload.id, audioSize: audioFile.size, audioType: audioFile.type });
+    console.log('[analyze-session] payload validated', { sessionId: normalizedPayload.id, storagePath: body.storage_path });
+
+    storagePathForCleanup = body.storage_path;
+    storageBucketForCleanup = body.storage_bucket;
+
+    console.log('[analyze-session] downloading audio from storage');
+    const audioFile = await fetchAudioFileFromStorage(body.storage_path, body.storage_bucket, body.mime_type);
+    console.log('[analyze-session] audio downloaded', { audioSize: audioFile.size, audioType: audioFile.type });
+
+    if (audioFile.size > 25 * 1024 * 1024) {
+      return NextResponse.json({ error: 'Audio file exceeds the 25 MB limit.' }, { status: 400 });
+    }
+
     const client = new OpenAI({ apiKey });
 
     console.log('[analyze-session] starting transcription');
@@ -333,6 +368,7 @@ export async function POST(request: Request) {
     const report = safeJsonParse<VoiceSessionAnalysisReport>(outputText, 'analysis model output');
     console.log('[analyze-session] report parsed successfully');
 
+    await cleanupUploadedAudio(storagePathForCleanup, storageBucketForCleanup);
     console.log('[analyze-session] returning success response');
     return NextResponse.json({
       sessionId: normalizedPayload.id,
@@ -348,8 +384,6 @@ export async function POST(request: Request) {
         ? error.message
         : 'Unknown analysis failure';
 
-    console.log('[analyze-session] returning success response');
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
-

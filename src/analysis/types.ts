@@ -123,6 +123,9 @@ export interface SessionArtifact {
   payload: PracticeSessionPayload;
   recording?: RecordingMetadata & {
     blob?: Blob;
+    storageBucket?: string;
+    storagePath?: string;
+    uploadedAt?: string;
   };
   analysisStatus: SessionAnalysisStatus;
   transcript?: string;

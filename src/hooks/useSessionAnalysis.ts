@@ -4,8 +4,13 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { getSessionArtifact, listSessionArtifacts, saveSessionArtifact } from '@/src/analysis/storage';
 import { SessionArtifact, SessionArtifactIndexItem, SessionAnalysisStatus } from '@/src/analysis/types';
+import { getSupabaseBrowserClient } from '@/src/lib/supabaseBrowser';
 
-const MAX_NETLIFY_AUDIO_UPLOAD_BYTES = 3 * 1024 * 1024;
+interface AudioUploadTarget {
+  bucket: string;
+  path: string;
+  token: string;
+}
 
 function cacheReportInSessionStorage(artifact: SessionArtifact) {
   if (typeof window === 'undefined') return;
@@ -27,6 +32,54 @@ async function parseJsonResponse(response: Response): Promise<any> {
   } catch {
     throw new Error(`The server returned invalid JSON. Response preview: ${raw.slice(0, 200)}`);
   }
+}
+
+async function requestAudioUploadTarget(sessionId: number, mimeType: string): Promise<AudioUploadTarget> {
+  const response = await fetch('/api/audio-upload-url', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ sessionId, mimeType })
+  });
+
+  const data = await parseJsonResponse(response);
+  if (!response.ok) {
+    throw new Error(data?.error || 'Could not prepare audio upload.');
+  }
+
+  return data as AudioUploadTarget;
+}
+
+async function uploadRecordingToSupabase(artifact: SessionArtifact): Promise<{ bucket: string; path: string; uploadedAt: string; }> {
+  const recording = artifact.recording;
+  if (!recording?.blob) {
+    throw new Error('This session does not have a saved audio recording to upload. Please record a new session and try again.');
+  }
+
+  const uploadTarget = await requestAudioUploadTarget(artifact.id, recording.mimeType);
+  const supabase = getSupabaseBrowserClient();
+  const extension = recording.mimeType.includes('mp4') ? 'm4a' : recording.mimeType.includes('mpeg') ? 'mp3' : recording.mimeType.includes('ogg') ? 'ogg' : 'webm';
+  const file = new File([recording.blob], `session-${artifact.id}.${extension}`, { type: recording.mimeType });
+
+  const { error } = await supabase.storage.from(uploadTarget.bucket).uploadToSignedUrl(
+    uploadTarget.path,
+    uploadTarget.token,
+    file,
+    {
+      contentType: recording.mimeType
+    }
+  );
+
+  if (error) {
+    throw new Error(error.message || 'Audio upload failed.');
+  }
+
+  return {
+    bucket: uploadTarget.bucket,
+    path: uploadTarget.path,
+    uploadedAt: new Date().toISOString()
+  };
 }
 
 function nextStatus(current: SessionAnalysisStatus): SessionAnalysisStatus {
@@ -89,31 +142,38 @@ export function useSessionAnalysis() {
       openAnalysisReport(targetId);
       return;
     }
-    if (!artifact.recording?.blob) {
+    if (!artifact.recording?.blob && !artifact.recording?.storagePath) {
       alert('This session does not have a saved audio recording to upload. Please record a new session and try again.');
-      return;
-    }
-    if (artifact.recording.blob.size > MAX_NETLIFY_AUDIO_UPLOAD_BYTES) {
-      const sizeMb = (artifact.recording.blob.size / (1024 * 1024)).toFixed(1);
-      alert(`This recording is ${sizeMb} MB, which is too large for reliable AI analysis on Netlify right now. Try a shorter recording for now.`);
       return;
     }
 
     setAnalysisBusyId(targetId);
+    let workingArtifact: SessionArtifact = {
+      ...artifact,
+      analysisStatus: 'uploading',
+      errorMessage: undefined,
+      updatedAt: new Date().toISOString()
+    };
+
     try {
-      let workingArtifact: SessionArtifact = {
-        ...artifact,
-        analysisStatus: 'uploading',
-        errorMessage: undefined,
-        updatedAt: new Date().toISOString()
-      };
       await persistArtifact(workingArtifact);
 
-      const formData = new FormData();
-      const fileName = `session-${artifact.id}.${artifact.recording.mimeType.includes('mp4') ? 'm4a' : 'webm'}`;
-      const audioFile = new File([artifact.recording.blob], fileName, { type: artifact.recording.mimeType });
-      formData.append('audio', audioFile);
-      formData.append('session_json', JSON.stringify(artifact.payload));
+      if (!workingArtifact.recording?.storagePath) {
+        const uploaded = await uploadRecordingToSupabase(workingArtifact);
+        workingArtifact = {
+          ...workingArtifact,
+          recording: workingArtifact.recording
+            ? {
+                ...workingArtifact.recording,
+                storageBucket: uploaded.bucket,
+                storagePath: uploaded.path,
+                uploadedAt: uploaded.uploadedAt
+              }
+            : workingArtifact.recording,
+          updatedAt: new Date().toISOString()
+        };
+        await persistArtifact(workingArtifact);
+      }
 
       workingArtifact = {
         ...workingArtifact,
@@ -124,7 +184,15 @@ export function useSessionAnalysis() {
 
       const response = await fetch('/api/analyze-session', {
         method: 'POST',
-        body: formData
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          session_json: artifact.payload,
+          storage_bucket: workingArtifact.recording?.storageBucket,
+          storage_path: workingArtifact.recording?.storagePath,
+          mime_type: artifact.recording?.mimeType
+        })
       });
       const data = await parseJsonResponse(response);
       if (!response.ok) {
@@ -139,15 +207,18 @@ export function useSessionAnalysis() {
       await persistArtifact(workingArtifact);
 
       const completedArtifact: SessionArtifact = {
-        ...artifact,
+        ...workingArtifact,
         payload: data.normalizedSession ?? artifact.payload,
         transcript: data.transcript,
         analysisReport: data.report,
         analysisStatus: 'complete',
-        recording: artifact.recording
+        recording: workingArtifact.recording
           ? {
-              ...artifact.recording,
-              blob: undefined
+              ...workingArtifact.recording,
+              blob: undefined,
+              storageBucket: undefined,
+              storagePath: undefined,
+              uploadedAt: undefined
             }
           : undefined,
         errorMessage: undefined,
@@ -158,7 +229,7 @@ export function useSessionAnalysis() {
       openAnalysisReport(targetId);
     } catch (error) {
       await persistArtifact({
-        ...artifact,
+        ...workingArtifact,
         analysisStatus: 'failed',
         errorMessage: error instanceof Error ? error.message : 'AI analysis failed.',
         updatedAt: new Date().toISOString()
@@ -178,4 +249,3 @@ export function useSessionAnalysis() {
     openAnalysisReport
   };
 }
-
