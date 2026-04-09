@@ -27,6 +27,11 @@ async function parseJsonResponse(response: Response): Promise<any> {
   }
 }
 
+function normalizeAudioMimeType(mimeType: string): string {
+  const normalized = mimeType.split(';')[0]?.trim();
+  return normalized || 'audio/webm';
+}
+
 function getN8nWebhookUrl(): string {
   const url = process.env.NEXT_PUBLIC_N8N_ANALYZE_WEBHOOK_URL;
   if (!url) {
@@ -42,16 +47,18 @@ function buildAudioFile(artifact: SessionArtifact): File {
     throw new Error('This session does not have a saved audio recording to upload. Please record a new session and try again.');
   }
 
+  const normalizedMimeType = normalizeAudioMimeType(recording.mimeType);
+
   const extension =
-    recording.mimeType.includes('mp4')
+    normalizedMimeType.includes('mp4')
       ? 'm4a'
-      : recording.mimeType.includes('mpeg')
+      : normalizedMimeType.includes('mpeg')
         ? 'mp3'
-        : recording.mimeType.includes('ogg')
+        : normalizedMimeType.includes('ogg')
           ? 'ogg'
           : 'webm';
 
-  return new File([recording.blob], `session-${artifact.id}.${extension}`, { type: recording.mimeType });
+  return new File([recording.blob], `session-${artifact.id}.${extension}`, { type: normalizedMimeType });
 }
 
 function buildAnalysisRequestBody(artifact: SessionArtifact): { formData: FormData; audioFile: File; sessionJson: string } {
@@ -62,7 +69,7 @@ function buildAnalysisRequestBody(artifact: SessionArtifact): { formData: FormDa
   formData.append('audio', audioFile);
   formData.append('session_id', String(artifact.id));
   formData.append('timestamp', artifact.timestamp);
-  formData.append('mime_type', audioFile.type);
+  formData.append('mime_type', normalizeAudioMimeType(audioFile.type));
   formData.append('session_json', sessionJson);
 
   return { formData, audioFile, sessionJson };
