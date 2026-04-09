@@ -54,17 +54,18 @@ function buildAudioFile(artifact: SessionArtifact): File {
   return new File([recording.blob], `session-${artifact.id}.${extension}`, { type: recording.mimeType });
 }
 
-function buildAnalysisRequestBody(artifact: SessionArtifact): FormData {
+function buildAnalysisRequestBody(artifact: SessionArtifact): { formData: FormData; audioFile: File; sessionJson: string } {
   const formData = new FormData();
   const audioFile = buildAudioFile(artifact);
+  const sessionJson = JSON.stringify(artifact.aiPayload ?? artifact.payload);
 
   formData.append('audio', audioFile);
   formData.append('session_id', String(artifact.id));
   formData.append('timestamp', artifact.timestamp);
   formData.append('mime_type', audioFile.type);
-  formData.append('session_json', JSON.stringify(artifact.aiPayload ?? artifact.payload));
+  formData.append('session_json', sessionJson);
 
-  return formData;
+  return { formData, audioFile, sessionJson };
 }
 
 function nextStatus(current: SessionAnalysisStatus): SessionAnalysisStatus {
@@ -169,9 +170,20 @@ export function useSessionAnalysis() {
       };
       await persistArtifact(workingArtifact);
 
+      const requestBody = buildAnalysisRequestBody(artifact);
+      console.log('[AI upload debug]', {
+        sessionId: artifact.id,
+        audioSizeBytes: requestBody.audioFile.size,
+        audioMimeType: requestBody.audioFile.type,
+        sessionJsonLength: requestBody.sessionJson.length,
+        rawFrameCount: artifact.payload.frames.length,
+        aiFrameCount: artifact.aiPayload?.frames.length ?? artifact.payload.frames.length,
+        validation: artifact.validation
+      });
+
       const response = await fetch(getN8nWebhookUrl(), {
         method: 'POST',
-        body: buildAnalysisRequestBody(artifact)
+        body: requestBody.formData
       });
 
       const data = await parseJsonResponse(response);
