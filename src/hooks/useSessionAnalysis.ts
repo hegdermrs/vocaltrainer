@@ -61,10 +61,21 @@ function buildAudioFile(artifact: SessionArtifact): File {
   return new File([recording.blob], `session-${artifact.id}.${extension}`, { type: normalizedMimeType });
 }
 
+function buildMinimalSessionPayload(artifact: SessionArtifact): string {
+  return JSON.stringify({
+    id: artifact.id,
+    timestamp: artifact.timestamp,
+    practiceMode: artifact.payload.practiceMode,
+    summary: artifact.payload.summary,
+    metrics: artifact.payload.metrics,
+    frames: []
+  });
+}
+
 function buildAnalysisRequestBody(artifact: SessionArtifact): { formData: FormData; audioFile: File; sessionJson: string } {
   const formData = new FormData();
   const audioFile = buildAudioFile(artifact);
-  const sessionJson = JSON.stringify(artifact.aiPayload ?? artifact.payload);
+  const sessionJson = buildMinimalSessionPayload(artifact);
 
   formData.append('audio', audioFile);
   formData.append('session_id', String(artifact.id));
@@ -185,6 +196,7 @@ export function useSessionAnalysis() {
         sessionJsonLength: requestBody.sessionJson.length,
         rawFrameCount: artifact.payload.frames.length,
         aiFrameCount: artifact.aiPayload?.frames.length ?? artifact.payload.frames.length,
+        minimalMode: true,
         validation: artifact.validation
       });
 
