@@ -1,16 +1,10 @@
-﻿'use client';
+'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { getSessionArtifact, listSessionArtifacts, saveSessionArtifact } from '@/src/analysis/storage';
 import { SessionArtifact, SessionArtifactIndexItem, SessionAnalysisStatus } from '@/src/analysis/types';
-import { getSupabaseBrowserClient } from '@/src/lib/supabaseBrowser';
-
-interface AudioUploadTarget {
-  bucket: string;
-  path: string;
-  token: string;
-}
+import { getSupabaseBrowserBucket, getSupabaseBrowserClient } from '@/src/lib/supabaseBrowser';
 
 function cacheReportInSessionStorage(artifact: SessionArtifact) {
   if (typeof window === 'undefined') return;
@@ -34,21 +28,17 @@ async function parseJsonResponse(response: Response): Promise<any> {
   }
 }
 
-async function requestAudioUploadTarget(sessionId: number, mimeType: string): Promise<AudioUploadTarget> {
-  const response = await fetch('/api/audio-upload-url', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({ sessionId, mimeType })
-  });
+function buildStoragePath(sessionId: number, mimeType: string): string {
+  const extension =
+    mimeType.includes('mp4')
+      ? 'm4a'
+      : mimeType.includes('mpeg')
+        ? 'mp3'
+        : mimeType.includes('ogg')
+          ? 'ogg'
+          : 'webm';
 
-  const data = await parseJsonResponse(response);
-  if (!response.ok) {
-    throw new Error(data?.error || 'Could not prepare audio upload.');
-  }
-
-  return data as AudioUploadTarget;
+  return `practice-sessions/${sessionId}/${Date.now()}.${extension}`;
 }
 
 async function uploadRecordingToSupabase(artifact: SessionArtifact): Promise<{ bucket: string; path: string; uploadedAt: string; }> {
@@ -57,27 +47,23 @@ async function uploadRecordingToSupabase(artifact: SessionArtifact): Promise<{ b
     throw new Error('This session does not have a saved audio recording to upload. Please record a new session and try again.');
   }
 
-  const uploadTarget = await requestAudioUploadTarget(artifact.id, recording.mimeType);
   const supabase = getSupabaseBrowserClient();
-  const extension = recording.mimeType.includes('mp4') ? 'm4a' : recording.mimeType.includes('mpeg') ? 'mp3' : recording.mimeType.includes('ogg') ? 'ogg' : 'webm';
-  const file = new File([recording.blob], `session-${artifact.id}.${extension}`, { type: recording.mimeType });
+  const bucket = getSupabaseBrowserBucket();
+  const path = buildStoragePath(artifact.id, recording.mimeType);
+  const file = new File([recording.blob], path.split('/').pop() || `session-${artifact.id}.webm`, { type: recording.mimeType });
 
-  const { error } = await supabase.storage.from(uploadTarget.bucket).uploadToSignedUrl(
-    uploadTarget.path,
-    uploadTarget.token,
-    file,
-    {
-      contentType: recording.mimeType
-    }
-  );
+  const { error } = await supabase.storage.from(bucket).upload(path, file, {
+    contentType: recording.mimeType,
+    upsert: false
+  });
 
   if (error) {
     throw new Error(error.message || 'Audio upload failed.');
   }
 
   return {
-    bucket: uploadTarget.bucket,
-    path: uploadTarget.path,
+    bucket,
+    path,
     uploadedAt: new Date().toISOString()
   };
 }

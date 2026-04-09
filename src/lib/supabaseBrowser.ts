@@ -1,8 +1,12 @@
-﻿'use client';
+'use client';
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
 let browserClient: SupabaseClient | null = null;
+
+export function getSupabaseBrowserBucket(): string {
+  return process.env.NEXT_PUBLIC_SUPABASE_STORAGE_BUCKET || 'practice-audio';
+}
 
 export function getSupabaseBrowserClient(): SupabaseClient {
   if (browserClient) return browserClient;
