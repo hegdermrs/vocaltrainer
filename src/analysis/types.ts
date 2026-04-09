@@ -63,6 +63,19 @@ export interface RecordingMetadata {
   mimeType: string;
   sizeBytes: number;
   durationSeconds: number;
+  startedAt?: string;
+  stoppedAt?: string;
+}
+
+export interface PracticeSessionMeta {
+  schemaVersion: number;
+  startedAt: string;
+  stoppedAt: string;
+  durationSeconds: number;
+  frameCount: number;
+  voicedFrameCount: number;
+  pitchFrameCount: number;
+  aiFrameCount: number;
 }
 
 export interface PracticeSessionPayload {
@@ -78,6 +91,7 @@ export interface PracticeSessionPayload {
   };
   summary: PracticeSessionSummary;
   metrics: PracticeTelemetrySession;
+  sessionMeta?: PracticeSessionMeta;
   frames: PracticeTelemetryFrame[];
   recording?: RecordingMetadata;
 }
@@ -121,10 +135,15 @@ export interface SessionArtifact {
   id: number;
   timestamp: string;
   payload: PracticeSessionPayload;
+  aiPayload?: PracticeSessionPayload;
   recording?: RecordingMetadata & {
     blob?: Blob;
   };
   analysisStatus: SessionAnalysisStatus;
+  validation?: {
+    readyForAnalysis: boolean;
+    issues: string[];
+  };
   transcript?: string;
   analysisReport?: VoiceSessionAnalysisReport;
   errorMessage?: string;

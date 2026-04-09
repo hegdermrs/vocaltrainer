@@ -53,7 +53,7 @@ function buildAnalysisRequestBody(artifact: SessionArtifact): FormData {
   formData.append('session_id', String(artifact.id));
   formData.append('timestamp', artifact.timestamp);
   formData.append('mime_type', audioFile.type);
-  formData.append('session_json', JSON.stringify(artifact.payload));
+  formData.append('session_json', JSON.stringify(artifact.aiPayload ?? artifact.payload));
 
   return formData;
 }
@@ -133,6 +133,10 @@ export function useSessionAnalysis() {
       openAnalysisReport(targetId);
       return;
     }
+    if (artifact.validation && !artifact.validation.readyForAnalysis) {
+      alert(artifact.validation.issues.join(' '));
+      return;
+    }
     if (!artifact.recording?.blob) {
       alert('This session does not have a saved audio recording to upload. Please record a new session and try again.');
       return;
@@ -168,12 +172,15 @@ export function useSessionAnalysis() {
 
       const result = extractReport(data);
 
+      const normalizedPayload = result.normalizedSession ?? artifact.aiPayload ?? artifact.payload;
       const completedArtifact: SessionArtifact = {
         ...workingArtifact,
-        payload: result.normalizedSession ?? artifact.payload,
+        payload: artifact.payload,
+        aiPayload: normalizedPayload,
         transcript: result.transcript,
         analysisReport: result.report,
         analysisStatus: 'complete',
+        validation: { readyForAnalysis: true, issues: [] },
         recording: workingArtifact.recording
           ? {
               ...workingArtifact.recording,

@@ -13,6 +13,7 @@ import {
 } from '@/src/analysis/types';
 import { SessionSummary } from '@/src/components/SessionSummaryPanel';
 import { AssistedConfig } from '@/src/engine/assistedPractice';
+import { finalizePracticeSessionArtifact } from '@/src/analysis/sessionArtifact';
 
 interface UseVoiceSessionOptions {
   practiceMode: 'free' | 'assisted';
@@ -253,17 +254,20 @@ export function useVoiceSession({
     }
   }, [getSupportedRecordingMimeType]);
 
-  const stopSessionRecording = useCallback(async (): Promise<{ blob?: Blob; mimeType: string; durationSeconds: number }> => {
+  const stopSessionRecording = useCallback(async (): Promise<{ blob?: Blob; mimeType: string; durationSeconds: number; startedAt?: string; stoppedAt?: string }> => {
     const recorder = mediaRecorderRef.current;
     const meta = recordingMetaRef.current;
     const finalize = () => {
-      const durationSeconds = meta ? Math.max(0, (Date.now() - meta.startedAt) / 1000) : 0;
+      const stoppedAtMs = Date.now();
+      const durationSeconds = meta ? Math.max(0, (stoppedAtMs - meta.startedAt) / 1000) : 0;
       const mimeType = meta?.mimeType || recorder?.mimeType || 'audio/webm';
       const blob = mediaChunksRef.current.length > 0 ? new Blob(mediaChunksRef.current, { type: mimeType }) : undefined;
+      const startedAt = meta ? new Date(meta.startedAt).toISOString() : undefined;
+      const stoppedAt = meta ? new Date(stoppedAtMs).toISOString() : undefined;
       mediaRecorderRef.current = null;
       mediaChunksRef.current = [];
       recordingMetaRef.current = null;
-      return { blob, mimeType, durationSeconds };
+      return { blob, mimeType, durationSeconds, startedAt, stoppedAt };
     };
 
     if (!recorder || recorder.state === 'inactive') {
@@ -385,8 +389,8 @@ export function useVoiceSession({
     const nextTelemetrySessions = [telemetrySession, ...telemetrySessions].slice(0, 50);
     setTelemetrySessions(nextTelemetrySessions);
 
-    const payload: PracticeSessionPayload = {
-      id: summary.id,
+    const artifact = finalizePracticeSessionArtifact({
+      sessionId: summary.id,
       timestamp: summary.timestamp,
       preset: String(preset),
       practiceMode,
@@ -396,29 +400,15 @@ export function useVoiceSession({
       frames: telemetryFramesRef.current.slice(),
       recording: recording.blob
         ? {
-            mimeType: recording.mimeType,
-            sizeBytes: recording.blob.size,
-            durationSeconds: recording.durationSeconds
-          }
-        : undefined
-    };
-
-    const artifact: SessionArtifact = {
-      id: summary.id,
-      timestamp: summary.timestamp,
-      payload,
-      recording: recording.blob
-        ? {
             blob: recording.blob,
             mimeType: recording.mimeType,
             sizeBytes: recording.blob.size,
-            durationSeconds: recording.durationSeconds
+            durationSeconds: recording.durationSeconds,
+            startedAt: recording.startedAt,
+            stoppedAt: recording.stoppedAt
           }
-        : undefined,
-      analysisStatus: recording.blob ? 'idle' : 'failed',
-      errorMessage: recording.blob ? undefined : 'This session did not capture a usable audio recording.',
-      updatedAt: new Date().toISOString()
-    };
+        : undefined
+    });
 
     try {
       if (typeof window !== 'undefined') {
