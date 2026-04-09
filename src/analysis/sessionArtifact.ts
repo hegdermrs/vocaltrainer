@@ -165,15 +165,9 @@ function buildPayload(params: FinalizePracticeSessionParams, frames: PracticeTel
   };
 }
 
-function validateArtifact(payload: PracticeSessionPayload, recording?: RecordingMetadata & { blob?: Blob }): { readyForAnalysis: boolean; issues: string[] } {
+function validateArtifact(payload: PracticeSessionPayload, _recording?: RecordingMetadata & { blob?: Blob }): { readyForAnalysis: boolean; issues: string[] } {
   const issues: string[] = [];
 
-  if (!recording?.blob || recording.sizeBytes <= 0) {
-    issues.push('No audio recording was captured.');
-  }
-  if ((payload.recording?.durationSeconds ?? 0) < 2) {
-    issues.push('Recording is too short. Please record at least 2 seconds.');
-  }
   if (payload.frames.length < 12) {
     issues.push('Not enough session data was captured. Please try again.');
   }

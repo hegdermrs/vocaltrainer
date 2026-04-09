@@ -27,11 +27,6 @@ async function parseJsonResponse(response: Response): Promise<any> {
   }
 }
 
-function normalizeAudioMimeType(mimeType: string): string {
-  const normalized = mimeType.split(';')[0]?.trim();
-  return normalized || 'audio/webm';
-}
-
 function getN8nWebhookUrl(): string {
   const url = process.env.NEXT_PUBLIC_N8N_ANALYZE_WEBHOOK_URL;
   if (!url) {
@@ -41,53 +36,16 @@ function getN8nWebhookUrl(): string {
   return url;
 }
 
-function buildAudioFile(artifact: SessionArtifact): File {
-  const recording = artifact.recording;
-  if (!recording?.blob) {
-    throw new Error('This session does not have a saved audio recording to upload. Please record a new session and try again.');
-  }
-
-  const normalizedMimeType = normalizeAudioMimeType(recording.mimeType);
-
-  const extension =
-    normalizedMimeType.includes('mp4')
-      ? 'm4a'
-      : normalizedMimeType.includes('mpeg')
-        ? 'mp3'
-        : normalizedMimeType.includes('ogg')
-          ? 'ogg'
-          : 'webm';
-
-  return new File([recording.blob], `session-${artifact.id}.${extension}`, { type: normalizedMimeType });
-}
-
-function buildMinimalSessionPayload(artifact: SessionArtifact): string {
-  return JSON.stringify({
-    id: artifact.id,
-    timestamp: artifact.timestamp,
-    practiceMode: artifact.payload.practiceMode,
-    summary: artifact.payload.summary,
-    metrics: artifact.payload.metrics,
-    frames: []
-  });
-}
-
-function buildSyntheticAudioFile(artifact: SessionArtifact): File {
-  return new File([new Blob(['test audio'], { type: 'audio/webm' })], `session-${artifact.id}.webm`, { type: 'audio/webm' });
-}
-
-function buildAnalysisRequestBody(artifact: SessionArtifact): { formData: FormData; audioFile: File; sessionJson: string } {
+function buildAnalysisRequestBody(artifact: SessionArtifact): { formData: FormData; sessionJson: string } {
   const formData = new FormData();
-  const audioFile = buildSyntheticAudioFile(artifact);
-  const sessionJson = buildMinimalSessionPayload(artifact);
+  const sessionJson = JSON.stringify(artifact.aiPayload ?? artifact.payload);
 
-  formData.append('audio', audioFile);
   formData.append('session_id', String(artifact.id));
   formData.append('timestamp', artifact.timestamp);
-  formData.append('mime_type', normalizeAudioMimeType(audioFile.type));
   formData.append('session_json', sessionJson);
+  formData.append('practice_mode', artifact.payload.practiceMode);
 
-  return { formData, audioFile, sessionJson };
+  return { formData, sessionJson };
 }
 
 function nextStatus(current: SessionAnalysisStatus): SessionAnalysisStatus {
@@ -169,10 +127,6 @@ export function useSessionAnalysis() {
       alert(artifact.validation.issues.join(' '));
       return;
     }
-    if (!artifact.recording?.blob) {
-      alert('This session does not have a saved audio recording to upload. Please record a new session and try again.');
-      return;
-    }
 
     setAnalysisBusyId(targetId);
     let workingArtifact: SessionArtifact = {
@@ -195,13 +149,11 @@ export function useSessionAnalysis() {
       const requestBody = buildAnalysisRequestBody(artifact);
       console.log('[AI upload debug]', {
         sessionId: artifact.id,
-        audioSizeBytes: requestBody.audioFile.size,
-        audioMimeType: requestBody.audioFile.type,
         sessionJsonLength: requestBody.sessionJson.length,
         rawFrameCount: artifact.payload.frames.length,
         aiFrameCount: artifact.aiPayload?.frames.length ?? artifact.payload.frames.length,
-        minimalMode: true,
-        syntheticAudioMode: true,
+        practiceMode: artifact.payload.practiceMode,
+        audioIncluded: false,
         validation: artifact.validation
       });
 
@@ -226,12 +178,6 @@ export function useSessionAnalysis() {
         analysisReport: result.report,
         analysisStatus: 'complete',
         validation: { readyForAnalysis: true, issues: [] },
-        recording: workingArtifact.recording
-          ? {
-              ...workingArtifact.recording,
-              blob: undefined
-            }
-          : undefined,
         errorMessage: undefined,
         updatedAt: new Date().toISOString()
       };
