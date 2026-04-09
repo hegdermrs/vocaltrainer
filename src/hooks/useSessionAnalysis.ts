@@ -72,9 +72,13 @@ function buildMinimalSessionPayload(artifact: SessionArtifact): string {
   });
 }
 
+function buildSyntheticAudioFile(artifact: SessionArtifact): File {
+  return new File([new Blob(['test audio'], { type: 'audio/webm' })], `session-${artifact.id}.webm`, { type: 'audio/webm' });
+}
+
 function buildAnalysisRequestBody(artifact: SessionArtifact): { formData: FormData; audioFile: File; sessionJson: string } {
   const formData = new FormData();
-  const audioFile = buildAudioFile(artifact);
+  const audioFile = buildSyntheticAudioFile(artifact);
   const sessionJson = buildMinimalSessionPayload(artifact);
 
   formData.append('audio', audioFile);
@@ -197,6 +201,7 @@ export function useSessionAnalysis() {
         rawFrameCount: artifact.payload.frames.length,
         aiFrameCount: artifact.aiPayload?.frames.length ?? artifact.payload.frames.length,
         minimalMode: true,
+        syntheticAudioMode: true,
         validation: artifact.validation
       });
 
