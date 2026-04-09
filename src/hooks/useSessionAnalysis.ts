@@ -27,6 +27,15 @@ async function parseJsonResponse(response: Response): Promise<any> {
   }
 }
 
+function getN8nWebhookUrl(): string {
+  const url = process.env.NEXT_PUBLIC_N8N_ANALYZE_WEBHOOK_URL;
+  if (!url) {
+    throw new Error('AI analysis webhook is not configured yet. Add NEXT_PUBLIC_N8N_ANALYZE_WEBHOOK_URL.');
+  }
+
+  return url;
+}
+
 function buildAudioFile(artifact: SessionArtifact): File {
   const recording = artifact.recording;
   if (!recording?.blob) {
@@ -160,7 +169,7 @@ export function useSessionAnalysis() {
       };
       await persistArtifact(workingArtifact);
 
-      const response = await fetch('/api/analyze-session', {
+      const response = await fetch(getN8nWebhookUrl(), {
         method: 'POST',
         body: buildAnalysisRequestBody(artifact)
       });
