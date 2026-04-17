@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
@@ -27,6 +27,7 @@ type AnalysisNotice = {
   state: 'processing' | 'ready' | 'error';
   message: string;
   sessionId?: number;
+  startedAt?: number;
 };
 
 export default function Home() {
@@ -49,13 +50,47 @@ export default function Home() {
 
   const isAnalyzing = analysis.analysisBusyId !== null;
   const analysisDialogOpen = pendingAnalysisId !== null || analysisNotice !== null;
+  const [countdownNow, setCountdownNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (analysisNotice?.state !== 'processing' || !analysisNotice.startedAt) {
+      return;
+    }
+
+    const interval = window.setInterval(() => {
+      setCountdownNow(Date.now());
+    }, 1000);
+
+    return () => window.clearInterval(interval);
+  }, [analysisNotice]);
+
+  const processingCountdown = useMemo(() => {
+    if (analysisNotice?.state !== 'processing' || !analysisNotice.startedAt) {
+      return null;
+    }
+
+    const estimatedSeconds = 50;
+    const elapsedSeconds = Math.floor((countdownNow - analysisNotice.startedAt) / 1000);
+    const remainingSeconds = Math.max(0, estimatedSeconds - elapsedSeconds);
+
+    return {
+      remainingSeconds,
+      isWaiting: remainingSeconds === 0
+    };
+  }, [analysisNotice, countdownNow]);
 
   const analysisActionLabel = useMemo(() => {
     if (!analysisNotice || analysisNotice.state !== 'processing') {
       return 'Processing your AI report...';
     }
+    if (processingCountdown?.isWaiting) {
+      return 'Waiting for AI results...';
+    }
+    if (processingCountdown) {
+      return `Estimated time remaining: ${processingCountdown.remainingSeconds}s`;
+    }
     return analysisNotice.message;
-  }, [analysisNotice]);
+  }, [analysisNotice, processingCountdown]);
 
   const openResultsInNewTab = useCallback((sessionId: number) => {
     window.open(`/analysis/${sessionId}`, '_blank', 'noopener,noreferrer');
@@ -74,7 +109,8 @@ export default function Home() {
     setAnalysisNotice({
       state: 'processing',
       sessionId,
-      message: 'Processing your session with AI. This can take a few moments.'
+      message: 'Processing your session with AI. This can take a few moments.',
+      startedAt: Date.now()
     });
 
     try {
@@ -153,7 +189,7 @@ export default function Home() {
               {pendingAnalysisId !== null && !analysisNotice
                 ? "We'll send this session's timing data and practice metrics to the AI coach to generate feedback and recommended lessons."
                 : analysisNotice?.state === 'processing'
-                  ? analysisActionLabel
+                  ? `${analysisNotice.message} ${processingCountdown?.isWaiting ? 'Waiting for a response now.' : ''}`.trim()
                   : analysisNotice?.message ?? 'Review the AI analysis status for this session.'}
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -170,7 +206,9 @@ export default function Home() {
           >
             {pendingAnalysisId !== null && !analysisNotice
               ? `Session ${pendingAnalysisId} is ready to analyze.`
-              : analysisNotice?.message ?? 'Select a session to continue.'}
+              : analysisNotice?.state === 'processing'
+                ? analysisActionLabel
+                : analysisNotice?.message ?? 'Select a session to continue.'}
           </div>
           <AlertDialogFooter>
             {pendingAnalysisId !== null && !analysisNotice ? (
@@ -181,7 +219,7 @@ export default function Home() {
                 </Button>
               </>
             ) : analysisNotice?.state === 'processing' ? (
-              <Button disabled>{analysisActionLabel}</Button>
+              <Button disabled>{processingCountdown?.isWaiting ? 'Waiting...' : 'Processing...'}</Button>
             ) : analysisNotice?.state === 'ready' && analysisNotice.sessionId ? (
               <>
                 <Button variant="outline" onClick={resetAnalysisDialog}>
