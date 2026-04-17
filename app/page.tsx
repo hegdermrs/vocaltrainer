@@ -3,6 +3,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Input } from '@/components/ui/input';
 import { Slider } from '@/components/ui/slider';
 import { Play, Square, Mic, MicOff, Timer, Mic2, Send } from 'lucide-react';
@@ -31,6 +32,7 @@ type AnalysisNotice = {
 export default function Home() {
   const [practiceMode, setPracticeMode] = useState<'free' | 'assisted'>('free');
   const [analysisNotice, setAnalysisNotice] = useState<AnalysisNotice | null>(null);
+  const [pendingAnalysisId, setPendingAnalysisId] = useState<number | null>(null);
   const assisted = useAssistedPractice();
   const analysis = useSessionAnalysis();
   const voice = useVoiceSession({
@@ -58,12 +60,7 @@ export default function Home() {
     window.open(`/analysis/${sessionId}`, '_blank', 'noopener,noreferrer');
   }, []);
 
-  const confirmAndRunAnalysis = useCallback(async (sessionId: number) => {
-    const confirmed = window.confirm('Send this session to AI for analysis?');
-    if (!confirmed) {
-      return;
-    }
-
+  const executeAnalysis = useCallback(async (sessionId: number) => {
     setAnalysisNotice({
       state: 'processing',
       sessionId,
@@ -74,6 +71,15 @@ export default function Home() {
       const result = await analysis.runAnalysisForSession(sessionId);
       if (!result) {
         setAnalysisNotice(null);
+        return;
+      }
+
+      if (result.alreadyReady) {
+        setAnalysisNotice({
+          state: 'ready',
+          sessionId: result.sessionId,
+          message: 'Your results are already ready.'
+        });
         return;
       }
 
@@ -90,6 +96,20 @@ export default function Home() {
     }
   }, [analysis]);
 
+  const confirmAndRunAnalysis = useCallback((sessionId: number) => {
+    setPendingAnalysisId(sessionId);
+  }, []);
+
+  const handleConfirmAnalysis = useCallback(async () => {
+    if (pendingAnalysisId === null) {
+      return;
+    }
+
+    const targetId = pendingAnalysisId;
+    setPendingAnalysisId(null);
+    await executeAnalysis(targetId);
+  }, [executeAnalysis, pendingAnalysisId]);
+
   const handleAssistedConfigChange = useCallback((next: AssistedConfig) => {
     assisted.updateAssistedConfig(next, {
       restartGuide: voice.isActive && practiceMode === 'assisted'
@@ -104,7 +124,30 @@ export default function Home() {
   }, [confirmAndRunAnalysis, voice]);
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-50 to-slate-100">
+    <>
+      <AlertDialog open={pendingAnalysisId !== null} onOpenChange={(open) => !open && setPendingAnalysisId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Send session to AI?</AlertDialogTitle>
+            <AlertDialogDescription>
+              We’ll send this session's timing data and practice metrics to the AI coach to generate feedback and recommended lessons.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+            {pendingAnalysisId !== null ? `Session ${pendingAnalysisId} is ready to analyze.` : 'Select a session to continue.'}
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isAnalyzing}>Cancel</AlertDialogCancel>
+            <AlertDialogAction disabled={isAnalyzing} onClick={(event) => {
+              event.preventDefault();
+              void handleConfirmAnalysis();
+            }}>
+              {isAnalyzing ? 'Processing...' : 'Send to AI'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <div className="min-h-screen bg-gradient-to-b from-slate-50 to-slate-100">
       <div className="container mx-auto px-4 py-8 pb-36">
         <div className="mx-auto max-w-7xl">
           <div className="mb-8 text-center">
@@ -540,8 +583,15 @@ export default function Home() {
         playDetectedAudio={practiceMode !== 'assisted'}
       />
     </div>
+    </>
   );
 }
+
+
+
+
+
+
 
 
 
