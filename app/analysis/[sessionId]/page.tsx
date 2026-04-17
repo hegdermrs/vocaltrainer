@@ -12,14 +12,30 @@ function formatDate(timestamp: string) {
   return new Date(timestamp).toLocaleString();
 }
 
-function readSessionStorageArtifact(sessionId: number): SessionArtifact | null {
+function readBrowserCachedArtifact(sessionId: number): SessionArtifact | null {
   if (typeof window === 'undefined') return null;
+
+  const key = 'voice-trainer-report-' + sessionId;
+
   try {
-    const raw = window.sessionStorage.getItem(`voice-trainer-report-${sessionId}`);
-    return raw ? (JSON.parse(raw) as SessionArtifact) : null;
+    const sessionRaw = window.sessionStorage.getItem(key);
+    if (sessionRaw) {
+      return JSON.parse(sessionRaw) as SessionArtifact;
+    }
   } catch {
-    return null;
+    // ignore and try localStorage
   }
+
+  try {
+    const localRaw = window.localStorage.getItem(key);
+    if (localRaw) {
+      return JSON.parse(localRaw) as SessionArtifact;
+    }
+  } catch {
+    // ignore and continue
+  }
+
+  return null;
 }
 
 function formatClock(seconds: number): string {
@@ -161,7 +177,7 @@ export default function AnalysisPage() {
         return;
       }
 
-      const cachedArtifact = readSessionStorageArtifact(sessionId);
+      const cachedArtifact = readBrowserCachedArtifact(sessionId);
       if (cachedArtifact) {
         if (!cancelled) {
           setArtifact(cachedArtifact);
@@ -450,6 +466,8 @@ export default function AnalysisPage() {
     </div>
   );
 }
+
+
 
 
 

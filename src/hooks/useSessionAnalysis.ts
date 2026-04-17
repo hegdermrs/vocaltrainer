@@ -5,12 +5,33 @@ import { useRouter } from 'next/navigation';
 import { getSessionArtifact, listSessionArtifacts, saveSessionArtifact } from '@/src/analysis/storage';
 import { SessionArtifact, SessionArtifactIndexItem, SessionAnalysisStatus, VoiceSessionAnalysisReport } from '@/src/analysis/types';
 
+function toSerializableArtifact(artifact: SessionArtifact): SessionArtifact {
+  return {
+    ...artifact,
+    recording: artifact.recording
+      ? {
+          ...artifact.recording,
+          blob: undefined
+        }
+      : undefined
+  };
+}
+
 function cacheReportInSessionStorage(artifact: SessionArtifact) {
   if (typeof window === 'undefined') return;
   try {
-    window.sessionStorage.setItem(`voice-trainer-report-${artifact.id}`, JSON.stringify(artifact));
+    window.sessionStorage.setItem(`voice-trainer-report-${artifact.id}`, JSON.stringify(toSerializableArtifact(artifact)));
   } catch {
     // Ignore sessionStorage failures and fall back to IndexedDB only.
+  }
+}
+
+function cacheReportInLocalStorage(artifact: SessionArtifact) {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(`voice-trainer-report-${artifact.id}`, JSON.stringify(toSerializableArtifact(artifact)));
+  } catch {
+    // Ignore localStorage failures.
   }
 }
 
@@ -98,6 +119,9 @@ export function useSessionAnalysis() {
       await refreshArtifacts();
     } catch {
       cacheReportInSessionStorage(artifact);
+      if (artifact.analysisReport) {
+        cacheReportInLocalStorage(artifact);
+      }
     }
   }, [refreshArtifacts]);
 
@@ -179,6 +203,7 @@ export function useSessionAnalysis() {
       };
       await persistArtifact(completedArtifact);
       cacheReportInSessionStorage(completedArtifact);
+      cacheReportInLocalStorage(completedArtifact);
       return { sessionId: targetId, alreadyReady: false as const };
     } catch (error) {
       await persistArtifact({
