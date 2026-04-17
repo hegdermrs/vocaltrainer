@@ -110,22 +110,18 @@ export function useSessionAnalysis() {
   const runAnalysisForSession = useCallback(async (sessionId: number | 'latest') => {
     const targetId = sessionId === 'latest' ? analysisArtifacts[0]?.id : sessionId;
     if (!targetId) {
-      alert('No recorded session is available to analyze yet.');
-      return;
+      throw new Error('No recorded session is available to analyze yet.');
     }
 
     const artifact = await getSessionArtifact(targetId);
     if (!artifact) {
-      alert('We could not find the saved session payload for that recording.');
-      return;
+      throw new Error('We could not find the saved session payload for that recording.');
     }
     if (artifact.analysisReport) {
-      openAnalysisReport(targetId);
-      return;
+      return { sessionId: targetId, alreadyReady: true as const };
     }
     if (artifact.validation && !artifact.validation.readyForAnalysis) {
-      alert(artifact.validation.issues.join(' '));
-      return;
+      throw new Error(artifact.validation.issues.join(' '));
     }
 
     setAnalysisBusyId(targetId);
@@ -183,7 +179,7 @@ export function useSessionAnalysis() {
       };
       await persistArtifact(completedArtifact);
       cacheReportInSessionStorage(completedArtifact);
-      openAnalysisReport(targetId);
+      return { sessionId: targetId, alreadyReady: false as const };
     } catch (error) {
       await persistArtifact({
         ...workingArtifact,
@@ -191,11 +187,11 @@ export function useSessionAnalysis() {
         errorMessage: error instanceof Error ? error.message : 'AI analysis failed.',
         updatedAt: new Date().toISOString()
       });
-      alert(error instanceof Error ? error.message : 'AI analysis failed.');
+      throw error instanceof Error ? error : new Error('AI analysis failed.');
     } finally {
       setAnalysisBusyId(null);
     }
-  }, [analysisArtifacts, openAnalysisReport, persistArtifact]);
+  }, [analysisArtifacts, persistArtifact]);
 
   return {
     analysisArtifacts,

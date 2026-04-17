@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
@@ -40,6 +40,16 @@ function scoreColor(score: number): string {
   if (score >= 70) return 'text-sky-600';
   if (score >= 55) return 'text-amber-600';
   return 'text-rose-600';
+}
+
+function getLessonHref(lesson: { dropbox_url?: string; dropbox_path?: string }): string | null {
+  const candidate = lesson.dropbox_url ?? lesson.dropbox_path;
+  if (!candidate) return null;
+  return /^https?:\/\//i.test(candidate) ? candidate : null;
+}
+
+function getLessonLocationLabel(lesson: { dropbox_url?: string; dropbox_path?: string }): string {
+  return lesson.dropbox_url ?? lesson.dropbox_path ?? 'Link coming soon';
 }
 
 function buildSeries(frames: PracticeTelemetryFrame[], pick: (frame: PracticeTelemetryFrame) => number | undefined, limit = 180) {
@@ -355,7 +365,43 @@ export default function AnalysisPage() {
                       <div className="font-semibold text-slate-900">{item.title}</div>
                       <div className="mt-2 text-sm text-slate-700"><span className="font-medium">Do this:</span> {item.action}</div>
                       <div className="mt-1 text-sm text-slate-700"><span className="font-medium">Why it matters:</span> {item.why}</div>
+                      {item.recommended_lessons && item.recommended_lessons.length > 0 && (
+                        <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4">
+                          <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Recommended lessons</div>
+                          <div className="mt-3 space-y-3">
+                            {item.recommended_lessons.map((lesson, lessonIndex) => {
+                              const lessonHref = getLessonHref(lesson);
+                              const locationLabel = getLessonLocationLabel(lesson);
 
+                              return (
+                                <div key={`${lesson.id}-${lessonIndex}`} className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+                                  <div className="flex flex-wrap items-start justify-between gap-3">
+                                    <div className="min-w-0 flex-1">
+                                      <div className="font-medium text-slate-900">{lesson.title}</div>
+                                      <div className="mt-1 text-sm leading-6 text-slate-700">{lesson.reason}</div>
+                                      <div className="mt-2 break-all text-xs text-slate-500">{locationLabel}</div>
+                                    </div>
+                                    {lessonHref ? (
+                                      <a
+                                        href={lessonHref}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="inline-flex items-center rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:bg-slate-100"
+                                      >
+                                        Open video
+                                      </a>
+                                    ) : (
+                                      <span className="inline-flex items-center rounded-md border border-dashed border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-500">
+                                        Dropbox link pending
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -404,4 +450,7 @@ export default function AnalysisPage() {
     </div>
   );
 }
+
+
+
 

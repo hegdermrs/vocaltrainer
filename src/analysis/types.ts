@@ -111,6 +111,14 @@ export interface VoiceSessionAnalysisReport {
     title: string;
     action: string;
     why: string;
+    recommended_lessons?: Array<{
+      id: string;
+      title: string;
+      dropbox_path?: string;
+      dropbox_url?: string;
+      reason: string;
+      duration_minutes?: number | null;
+    }>;
   }>;
   suggested_exercises: Array<{
     name: string;
@@ -159,3 +167,4 @@ export interface SessionArtifactIndexItem {
   hasReport: boolean;
   reportSummary?: string;
 }
+

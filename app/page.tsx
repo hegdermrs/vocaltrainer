@@ -1,6 +1,6 @@
-﻿'use client';
+'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -22,8 +22,15 @@ import { useVoiceSession } from '@/src/hooks/useVoiceSession';
 import { AssistedConfig, EXERCISE_OPTIONS, clampBpm, clampTranspose } from '@/src/engine/assistedPractice';
 import { applyPreset, EnginePreset, getAvailablePresets } from '@/src/engine/engineSettings';
 
+type AnalysisNotice = {
+  state: 'processing' | 'ready' | 'error';
+  message: string;
+  sessionId?: number;
+};
+
 export default function Home() {
   const [practiceMode, setPracticeMode] = useState<'free' | 'assisted'>('free');
+  const [analysisNotice, setAnalysisNotice] = useState<AnalysisNotice | null>(null);
   const assisted = useAssistedPractice();
   const analysis = useSessionAnalysis();
   const voice = useVoiceSession({
@@ -38,6 +45,51 @@ export default function Home() {
     persistArtifact: analysis.persistArtifact
   });
 
+  const isAnalyzing = analysis.analysisBusyId !== null;
+
+  const analysisActionLabel = useMemo(() => {
+    if (!analysisNotice || analysisNotice.state !== 'processing') {
+      return 'Processing your AI report...';
+    }
+    return analysisNotice.message;
+  }, [analysisNotice]);
+
+  const openResultsInNewTab = useCallback((sessionId: number) => {
+    window.open(`/analysis/${sessionId}`, '_blank', 'noopener,noreferrer');
+  }, []);
+
+  const confirmAndRunAnalysis = useCallback(async (sessionId: number) => {
+    const confirmed = window.confirm('Send this session to AI for analysis?');
+    if (!confirmed) {
+      return;
+    }
+
+    setAnalysisNotice({
+      state: 'processing',
+      sessionId,
+      message: 'Processing your session with AI. This can take a few moments.'
+    });
+
+    try {
+      const result = await analysis.runAnalysisForSession(sessionId);
+      if (!result) {
+        setAnalysisNotice(null);
+        return;
+      }
+
+      setAnalysisNotice({
+        state: 'ready',
+        sessionId: result.sessionId,
+        message: 'Your results are ready.'
+      });
+    } catch (error) {
+      setAnalysisNotice({
+        state: 'error',
+        message: error instanceof Error ? error.message : 'AI analysis failed.'
+      });
+    }
+  }, [analysis]);
+
   const handleAssistedConfigChange = useCallback((next: AssistedConfig) => {
     assisted.updateAssistedConfig(next, {
       restartGuide: voice.isActive && practiceMode === 'assisted'
@@ -47,9 +99,9 @@ export default function Home() {
   const handleStopAndSend = useCallback(async () => {
     const artifact = await voice.handleStop();
     if (artifact) {
-      await analysis.runAnalysisForSession(artifact.id);
+      await confirmAndRunAnalysis(artifact.id);
     }
-  }, [analysis, voice]);
+  }, [confirmAndRunAnalysis, voice]);
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-slate-100">
@@ -377,20 +429,49 @@ export default function Home() {
               <div>
                 <div className="text-lg font-semibold text-slate-900">AI Analysis</div>
                 <div className="text-sm text-slate-600">
-                  Send the full recording and timed session JSON for a coaching report.
+                  Send the timed session data to AI for a coaching report.
                 </div>
               </div>
               {!voice.isActive && analysis.recentAnalysisArtifacts[0] && !analysis.recentAnalysisArtifacts[0].hasReport && analysis.recentAnalysisArtifacts[0].hasAudio && (
                 <Button
-                  onClick={() => void analysis.runAnalysisForSession(analysis.recentAnalysisArtifacts[0].id)}
-                  disabled={analysis.analysisBusyId !== null}
+                  onClick={() => void confirmAndRunAnalysis(analysis.recentAnalysisArtifacts[0].id)}
+                  disabled={isAnalyzing}
                   className="gap-2"
                 >
                   <Send className="h-4 w-4" />
-                  {analysis.analysisBusyId === analysis.recentAnalysisArtifacts[0].id ? 'Analyzing...' : 'Analyze Latest Session'}
+                  {analysis.analysisBusyId === analysis.recentAnalysisArtifacts[0].id ? 'Processing...' : 'Analyze Latest Session'}
                 </Button>
               )}
             </div>
+            {analysisNotice && (
+              <div
+                className={`mt-4 rounded-lg border px-4 py-3 text-sm ${
+                  analysisNotice.state === 'processing'
+                    ? 'border-sky-200 bg-sky-50 text-sky-900'
+                    : analysisNotice.state === 'ready'
+                      ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
+                      : 'border-rose-200 bg-rose-50 text-rose-900'
+                }`}
+              >
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <div className="font-semibold">
+                      {analysisNotice.state === 'processing'
+                        ? 'Processing'
+                        : analysisNotice.state === 'ready'
+                          ? 'Results ready'
+                          : 'Analysis failed'}
+                    </div>
+                    <div className="mt-1">{analysisNotice.state === 'processing' ? analysisActionLabel : analysisNotice.message}</div>
+                  </div>
+                  {analysisNotice.state === 'ready' && analysisNotice.sessionId && (
+                    <Button variant="outline" onClick={() => analysisNotice.sessionId && openResultsInNewTab(analysisNotice.sessionId)}>
+                      Open results in new tab
+                    </Button>
+                  )}
+                </div>
+              </div>
+            )}
             <div className="mt-4 space-y-2">
               {analysis.recentAnalysisArtifacts.length === 0 ? (
                 <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500">
@@ -421,10 +502,10 @@ export default function Home() {
                       ) : artifact.hasAudio ? (
                         <Button
                           variant="outline"
-                          onClick={() => void analysis.runAnalysisForSession(artifact.id)}
-                          disabled={analysis.analysisBusyId !== null}
+                          onClick={() => void confirmAndRunAnalysis(artifact.id)}
+                          disabled={isAnalyzing}
                         >
-                          {analysis.analysisBusyId === artifact.id ? 'Analyzing...' : 'Analyze with AI'}
+                          {analysis.analysisBusyId === artifact.id ? 'Processing...' : 'Analyze with AI'}
                         </Button>
                       ) : (
                         <Badge variant="outline">Audio uploaded and removed</Badge>
@@ -461,3 +542,12 @@ export default function Home() {
     </div>
   );
 }
+
+
+
+
+
+
+
+
+
