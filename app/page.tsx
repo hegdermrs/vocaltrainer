@@ -1,4 +1,4 @@
-'use client';
+ï»¿'use client';
 
 import { useCallback, useMemo, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
@@ -130,7 +130,7 @@ export default function Home() {
           <AlertDialogHeader>
             <AlertDialogTitle>Send session to AI?</AlertDialogTitle>
             <AlertDialogDescription>
-              We’ll send this session's timing data and practice metrics to the AI coach to generate feedback and recommended lessons.
+              We'll send this session's timing data and practice metrics to the AI coach to generate feedback and recommended lessons.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
