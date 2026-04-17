@@ -1,9 +1,9 @@
-﻿'use client';
+'use client';
 
 import { useCallback, useMemo, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Input } from '@/components/ui/input';
 import { Slider } from '@/components/ui/slider';
 import { Play, Square, Mic, MicOff, Timer, Mic2, Send } from 'lucide-react';
@@ -48,6 +48,7 @@ export default function Home() {
   });
 
   const isAnalyzing = analysis.analysisBusyId !== null;
+  const analysisDialogOpen = pendingAnalysisId !== null || analysisNotice !== null;
 
   const analysisActionLabel = useMemo(() => {
     if (!analysisNotice || analysisNotice.state !== 'processing') {
@@ -59,6 +60,15 @@ export default function Home() {
   const openResultsInNewTab = useCallback((sessionId: number) => {
     window.open(`/analysis/${sessionId}`, '_blank', 'noopener,noreferrer');
   }, []);
+
+  const resetAnalysisDialog = useCallback(() => {
+    if (isAnalyzing) {
+      return;
+    }
+
+    setPendingAnalysisId(null);
+    setAnalysisNotice(null);
+  }, [isAnalyzing]);
 
   const executeAnalysis = useCallback(async (sessionId: number) => {
     setAnalysisNotice({
@@ -125,25 +135,70 @@ export default function Home() {
 
   return (
     <>
-      <AlertDialog open={pendingAnalysisId !== null} onOpenChange={(open) => !open && setPendingAnalysisId(null)}>
+      <AlertDialog open={analysisDialogOpen} onOpenChange={(open) => !open && resetAnalysisDialog()}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Send session to AI?</AlertDialogTitle>
+            <AlertDialogTitle>
+              {pendingAnalysisId !== null && !analysisNotice
+                ? 'Send session to AI?'
+                : analysisNotice?.state === 'processing'
+                  ? 'Processing your report'
+                  : analysisNotice?.state === 'ready'
+                    ? 'Results ready'
+                    : analysisNotice?.state === 'error'
+                      ? 'Analysis failed'
+                      : 'AI analysis'}
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              We'll send this session's timing data and practice metrics to the AI coach to generate feedback and recommended lessons.
+              {pendingAnalysisId !== null && !analysisNotice
+                ? "We'll send this session's timing data and practice metrics to the AI coach to generate feedback and recommended lessons."
+                : analysisNotice?.state === 'processing'
+                  ? analysisActionLabel
+                  : analysisNotice?.message ?? 'Review the AI analysis status for this session.'}
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-            {pendingAnalysisId !== null ? `Session ${pendingAnalysisId} is ready to analyze.` : 'Select a session to continue.'}
+          <div
+            className={`rounded-lg border px-4 py-3 text-sm ${
+              analysisNotice?.state === 'processing'
+                ? 'border-sky-200 bg-sky-50 text-sky-900'
+                : analysisNotice?.state === 'ready'
+                  ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
+                  : analysisNotice?.state === 'error'
+                    ? 'border-rose-200 bg-rose-50 text-rose-900'
+                    : 'border-slate-200 bg-slate-50 text-slate-600'
+            }`}
+          >
+            {pendingAnalysisId !== null && !analysisNotice
+              ? `Session ${pendingAnalysisId} is ready to analyze.`
+              : analysisNotice?.message ?? 'Select a session to continue.'}
           </div>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={isAnalyzing}>Cancel</AlertDialogCancel>
-            <AlertDialogAction disabled={isAnalyzing} onClick={(event) => {
-              event.preventDefault();
-              void handleConfirmAnalysis();
-            }}>
-              {isAnalyzing ? 'Processing...' : 'Send to AI'}
-            </AlertDialogAction>
+            {pendingAnalysisId !== null && !analysisNotice ? (
+              <>
+                <AlertDialogCancel disabled={isAnalyzing}>Cancel</AlertDialogCancel>
+                <Button disabled={isAnalyzing} onClick={() => void handleConfirmAnalysis()}>
+                  Send to AI
+                </Button>
+              </>
+            ) : analysisNotice?.state === 'processing' ? (
+              <Button disabled>{analysisActionLabel}</Button>
+            ) : analysisNotice?.state === 'ready' && analysisNotice.sessionId ? (
+              <>
+                <Button variant="outline" onClick={resetAnalysisDialog}>
+                  Close
+                </Button>
+                <Button
+                  onClick={() => {
+                    openResultsInNewTab(analysisNotice.sessionId!);
+                    resetAnalysisDialog();
+                  }}
+                >
+                  Open results in new tab
+                </Button>
+              </>
+            ) : analysisNotice?.state === 'error' ? (
+              <Button onClick={resetAnalysisDialog}>Close</Button>
+            ) : null}
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -486,35 +541,6 @@ export default function Home() {
                 </Button>
               )}
             </div>
-            {analysisNotice && (
-              <div
-                className={`mt-4 rounded-lg border px-4 py-3 text-sm ${
-                  analysisNotice.state === 'processing'
-                    ? 'border-sky-200 bg-sky-50 text-sky-900'
-                    : analysisNotice.state === 'ready'
-                      ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
-                      : 'border-rose-200 bg-rose-50 text-rose-900'
-                }`}
-              >
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <div className="font-semibold">
-                      {analysisNotice.state === 'processing'
-                        ? 'Processing'
-                        : analysisNotice.state === 'ready'
-                          ? 'Results ready'
-                          : 'Analysis failed'}
-                    </div>
-                    <div className="mt-1">{analysisNotice.state === 'processing' ? analysisActionLabel : analysisNotice.message}</div>
-                  </div>
-                  {analysisNotice.state === 'ready' && analysisNotice.sessionId && (
-                    <Button variant="outline" onClick={() => analysisNotice.sessionId && openResultsInNewTab(analysisNotice.sessionId)}>
-                      Open results in new tab
-                    </Button>
-                  )}
-                </div>
-              </div>
-            )}
             <div className="mt-4 space-y-2">
               {analysis.recentAnalysisArtifacts.length === 0 ? (
                 <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500">
@@ -586,7 +612,6 @@ export default function Home() {
     </>
   );
 }
-
 
 
 
