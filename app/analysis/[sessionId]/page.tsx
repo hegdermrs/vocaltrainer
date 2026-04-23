@@ -58,14 +58,19 @@ function scoreColor(score: number): string {
   return 'text-rose-600';
 }
 
-function getLessonHref(lesson: { dropbox_url?: string; dropbox_path?: string }): string | null {
-  const candidate = lesson.dropbox_url ?? lesson.dropbox_path;
+function getLessonHref(lesson: { video_url?: string; dropbox_url?: string; dropbox_path?: string }): string | null {
+  const candidate = lesson.dropbox_url ?? lesson.video_url ?? lesson.dropbox_path;
   if (!candidate) return null;
   return /^https?:\/\//i.test(candidate) ? candidate : null;
 }
 
-function getLessonLocationLabel(lesson: { dropbox_url?: string; dropbox_path?: string }): string {
-  return lesson.dropbox_url ?? lesson.dropbox_path ?? 'Link coming soon';
+function getLessonLocationLabel(lesson: { video_url?: string; dropbox_url?: string; dropbox_path?: string }): string {
+  return lesson.dropbox_url ?? lesson.video_url ?? lesson.dropbox_path ?? 'Link coming soon';
+}
+
+function getLessonVideoUrl(lesson: { video_url?: string }): string | null {
+  if (!lesson.video_url) return null;
+  return /^https?:\/\//i.test(lesson.video_url) ? lesson.video_url : null;
 }
 
 function buildSeries(frames: PracticeTelemetryFrame[], pick: (frame: PracticeTelemetryFrame) => number | undefined, limit = 180) {
