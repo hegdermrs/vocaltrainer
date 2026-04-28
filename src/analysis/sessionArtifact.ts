@@ -1,4 +1,6 @@
-import {
+﻿import {
+  PracticeEvidenceMoment,
+  PracticeSegmentSummary,
   PracticeSessionPayload,
   PracticeSessionSummary,
   PracticeTelemetryFrame,
@@ -20,7 +22,10 @@ interface FinalizePracticeSessionParams {
   recording?: RecordingMetadata & { blob?: Blob };
 }
 
-const AI_FRAME_LIMIT = 900;
+const AI_FRAME_LIMIT = 120;
+const SEGMENT_TARGET_COUNT = 24;
+const MIN_SEGMENT_MS = 15000;
+const EVIDENCE_LIMIT = 14;
 const SESSION_SCHEMA_VERSION = 2;
 
 function roundNumber(value: number | undefined, decimals = 4): number | undefined {
@@ -128,7 +133,187 @@ function buildAiFrames(frames: PracticeTelemetryFrame[], maxCount: number): Prac
   return limitedIndices.map((index) => frames[index]);
 }
 
-function buildPayload(params: FinalizePracticeSessionParams, frames: PracticeTelemetryFrame[], aiFrameCount: number): PracticeSessionPayload {
+function average(values: number[]): number | undefined {
+  if (!values.length) return undefined;
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function topNotes(frames: PracticeTelemetryFrame[]): string[] {
+  const counts = new Map<string, number>();
+  for (const frame of frames) {
+    if (!frame.noteName) continue;
+    counts.set(frame.noteName, (counts.get(frame.noteName) ?? 0) + 1);
+  }
+
+  return Array.from(counts.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([note]) => note);
+}
+
+function formatSegmentLabel(startSeconds: number, endSeconds: number): string {
+  return `${startSeconds.toFixed(0)}s-${endSeconds.toFixed(0)}s`;
+}
+
+function buildSegmentSummaries(frames: PracticeTelemetryFrame[], durationSeconds: number): PracticeSegmentSummary[] {
+  if (!frames.length || durationSeconds <= 0) return [];
+
+  const durationMs = durationSeconds * 1000;
+  const segmentMs = Math.max(MIN_SEGMENT_MS, Math.ceil(durationMs / SEGMENT_TARGET_COUNT));
+  const segments: PracticeSegmentSummary[] = [];
+
+  for (let startMs = 0; startMs < durationMs; startMs += segmentMs) {
+    const endMs = Math.min(durationMs, startMs + segmentMs);
+    const segmentFrames = frames.filter((frame) => frame.t >= startMs && frame.t < endMs);
+    if (!segmentFrames.length) continue;
+
+    const voicedFrames = segmentFrames.filter((frame) => frame.voiced);
+    const pitchFrames = segmentFrames.filter((frame) => frame.pitchDetected && typeof frame.pitchHz === 'number');
+    const confidenceValues = pitchFrames
+      .map((frame) => frame.pitchConfidence)
+      .filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
+    const pitchValues = pitchFrames
+      .map((frame) => frame.pitchHz)
+      .filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
+    const breathinessValues = segmentFrames
+      .map((frame) => frame.breathiness)
+      .filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
+    const maxSustainSeconds = Math.max(
+      0,
+      ...segmentFrames
+        .map((frame) => frame.sustainSeconds)
+        .filter((value): value is number => typeof value === 'number' && Number.isFinite(value))
+    );
+    const assistedEligible = segmentFrames.filter((frame) => typeof frame.assistedHit === 'boolean');
+    const assistedHits = assistedEligible.filter((frame) => frame.assistedHit).length;
+
+    segments.push({
+      startSeconds: roundNumber(startMs / 1000, 2) ?? 0,
+      endSeconds: roundNumber(endMs / 1000, 2) ?? 0,
+      label: formatSegmentLabel(startMs / 1000, endMs / 1000),
+      voicedRatio: roundNumber(voicedFrames.length / segmentFrames.length, 3) ?? 0,
+      avgPitchHz: roundNumber(average(pitchValues), 2),
+      avgPitchConfidence: roundNumber(average(confidenceValues), 3),
+      avgBreathiness: roundNumber(average(breathinessValues), 3),
+      maxSustainSeconds: roundNumber(maxSustainSeconds, 3) ?? 0,
+      followAccuracy:
+        assistedEligible.length > 0 ? roundNumber(assistedHits / assistedEligible.length, 3) : undefined,
+      keyNotes: topNotes(segmentFrames)
+    });
+  }
+
+  return segments;
+}
+
+function buildEvidenceMoments(
+  frames: PracticeTelemetryFrame[],
+  durationSeconds: number,
+  practiceMode: 'free' | 'assisted'
+): PracticeEvidenceMoment[] {
+  if (!frames.length) return [];
+
+  const candidates: Array<PracticeEvidenceMoment & { score: number }> = [];
+  const voicedFrames = frames.filter((frame) => frame.voiced);
+  const sustainFrames = frames.filter((frame) => (frame.sustainSeconds ?? 0) >= 1.5);
+  const breathyFrames = frames.filter((frame) => (frame.breathiness ?? 0) >= 0.18);
+  const unstableFrames = frames.filter((frame) => Math.abs(frame.cents ?? 0) >= 35);
+  const confidentFrames = frames.filter((frame) => (frame.pitchConfidence ?? 0) >= 0.85 && frame.pitchDetected);
+  const missedAssistedFrames =
+    practiceMode === 'assisted'
+      ? frames.filter((frame) => frame.assistedHit === false && frame.assistedTargetNote)
+      : [];
+
+  const addCandidate = (
+    frame: PracticeTelemetryFrame | undefined,
+    label: string,
+    observation: string,
+    severity: 'low' | 'medium' | 'high',
+    score: number
+  ) => {
+    if (!frame) return;
+    const timestampSeconds = roundNumber(frame.t / 1000, 2) ?? 0;
+    candidates.push({ timestampSeconds, label, observation, severity, score });
+  };
+
+  const bestSustainFrame = sustainFrames.sort((a, b) => (b.sustainSeconds ?? 0) - (a.sustainSeconds ?? 0))[0];
+  addCandidate(
+    bestSustainFrame,
+    'Longest held note',
+    'A strong sustained note happened here. This is a useful reference point for breath support and steadiness.',
+    'low',
+    (bestSustainFrame?.sustainSeconds ?? 0) * 10
+  );
+
+  const breathiestFrame = breathyFrames.sort((a, b) => (b.breathiness ?? 0) - (a.breathiness ?? 0))[0];
+  addCandidate(
+    breathiestFrame,
+    'Airier tone moment',
+    'Your tone sounded more airy here. This is a good spot to review for cleaner breath control.',
+    'medium',
+    (breathiestFrame?.breathiness ?? 0) * 100
+  );
+
+  const leastStableFrame = unstableFrames.sort((a, b) => Math.abs(b.cents ?? 0) - Math.abs(a.cents ?? 0))[0];
+  addCandidate(
+    leastStableFrame,
+    'Pitch drift',
+    'This moment shows more pitch movement than usual, so it is useful for pitch-matching practice.',
+    'medium',
+    Math.abs(leastStableFrame?.cents ?? 0)
+  );
+
+  const clearestPitchFrame = confidentFrames.sort((a, b) => (b.pitchConfidence ?? 0) - (a.pitchConfidence ?? 0))[0];
+  addCandidate(
+    clearestPitchFrame,
+    'Clear note lock',
+    'The app had a very confident pitch lock here, which often means the note was clearer and more settled.',
+    'low',
+    (clearestPitchFrame?.pitchConfidence ?? 0) * 100
+  );
+
+  const firstVoiceFrame = voicedFrames[0];
+  addCandidate(
+    firstVoiceFrame,
+    'Early voice entry',
+    'This is one of the first clear singing moments in the session and helps show how the voice settled in.',
+    'low',
+    durationSeconds - (firstVoiceFrame?.t ?? 0) / 1000
+  );
+
+  const assistedMissFrame = missedAssistedFrames.sort((a, b) => (b.pitchConfidence ?? 0) - (a.pitchConfidence ?? 0))[0];
+  addCandidate(
+    assistedMissFrame,
+    'Guide mismatch',
+    'The guided target and your sung note separated here, making it a helpful follow-accuracy checkpoint.',
+    'medium',
+    (assistedMissFrame?.pitchConfidence ?? 0) * 100
+  );
+
+  const deduped: PracticeEvidenceMoment[] = [];
+  for (const candidate of candidates.sort((a, b) => b.score - a.score)) {
+    const closeToExisting = deduped.some((moment) => Math.abs(moment.timestampSeconds - candidate.timestampSeconds) < 8);
+    if (closeToExisting) continue;
+    deduped.push({
+      timestampSeconds: candidate.timestampSeconds,
+      label: candidate.label,
+      observation: candidate.observation,
+      severity: candidate.severity
+    });
+    if (deduped.length >= EVIDENCE_LIMIT) break;
+  }
+
+  return deduped.sort((a, b) => a.timestampSeconds - b.timestampSeconds);
+}
+
+function buildPayload(
+  params: FinalizePracticeSessionParams,
+  frames: PracticeTelemetryFrame[],
+  aiFrameCount: number,
+  options?: {
+    segmentSummaries?: PracticeSegmentSummary[];
+    evidenceMoments?: PracticeEvidenceMoment[];
+  }
+): PracticeSessionPayload {
   const frameCount = frames.length;
   const voicedFrameCount = frames.filter((frame) => frame.voiced).length;
   const pitchFrameCount = frames.filter((frame) => frame.pitchDetected && typeof frame.pitchHz === 'number').length;
@@ -161,11 +346,13 @@ function buildPayload(params: FinalizePracticeSessionParams, frames: PracticeTel
       aiFrameCount
     },
     frames,
+    segmentSummaries: options?.segmentSummaries,
+    evidenceMoments: options?.evidenceMoments,
     recording
   };
 }
 
-function validateArtifact(payload: PracticeSessionPayload, _recording?: RecordingMetadata & { blob?: Blob }): { readyForAnalysis: boolean; issues: string[] } {
+function validateArtifact(payload: PracticeSessionPayload): { readyForAnalysis: boolean; issues: string[] } {
   const issues: string[] = [];
 
   if (payload.frames.length < 12) {
@@ -184,10 +371,15 @@ function validateArtifact(payload: PracticeSessionPayload, _recording?: Recordin
 export function finalizePracticeSessionArtifact(params: FinalizePracticeSessionParams): SessionArtifact {
   const normalizedFrames = normalizeFrames(params.frames);
   const aiFrames = buildAiFrames(normalizedFrames, AI_FRAME_LIMIT);
+  const segmentSummaries = buildSegmentSummaries(normalizedFrames, params.metrics.durationSeconds);
+  const evidenceMoments = buildEvidenceMoments(normalizedFrames, params.metrics.durationSeconds, params.practiceMode);
 
   const payload = buildPayload(params, normalizedFrames, aiFrames.length);
-  const aiPayload = buildPayload(params, aiFrames, aiFrames.length);
-  const validation = validateArtifact(aiPayload, params.recording);
+  const aiPayload = buildPayload(params, aiFrames, aiFrames.length, {
+    segmentSummaries,
+    evidenceMoments
+  });
+  const validation = validateArtifact(aiPayload);
 
   return {
     id: params.sessionId,

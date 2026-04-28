@@ -78,6 +78,26 @@ export interface PracticeSessionMeta {
   aiFrameCount: number;
 }
 
+export interface PracticeSegmentSummary {
+  startSeconds: number;
+  endSeconds: number;
+  label: string;
+  voicedRatio: number;
+  avgPitchHz?: number;
+  avgPitchConfidence?: number;
+  avgBreathiness?: number;
+  maxSustainSeconds: number;
+  followAccuracy?: number;
+  keyNotes: string[];
+}
+
+export interface PracticeEvidenceMoment {
+  timestampSeconds: number;
+  label: string;
+  observation: string;
+  severity: 'low' | 'medium' | 'high';
+}
+
 export interface PracticeSessionPayload {
   id: number;
   timestamp: string;
@@ -94,6 +114,8 @@ export interface PracticeSessionPayload {
   metrics: PracticeTelemetrySession;
   sessionMeta?: PracticeSessionMeta;
   frames: PracticeTelemetryFrame[];
+  segmentSummaries?: PracticeSegmentSummary[];
+  evidenceMoments?: PracticeEvidenceMoment[];
   recording?: RecordingMetadata;
 }
 
@@ -169,9 +191,3 @@ export interface SessionArtifactIndexItem {
   hasReport: boolean;
   reportSummary?: string;
 }
-
-
-
-
-
-

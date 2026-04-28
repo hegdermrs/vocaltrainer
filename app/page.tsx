@@ -13,7 +13,6 @@ import { AirflowModule } from '@/src/components/modules/AirflowModule';
 import { SustainModule } from '@/src/components/modules/SustainModule';
 import { CalibrationBanner } from '@/src/components/CalibrationBanner';
 import { DebugPanel } from '@/src/components/DebugPanel';
-import { SessionSummaryPanel } from '@/src/components/SessionSummaryPanel';
 import { InfoTooltip } from '@/src/components/ui/info-tooltip';
 import { BottomPiano } from '@/src/components/BottomPiano';
 import { AssistedPianoRoll } from '@/src/components/AssistedPianoRoll';
@@ -642,22 +641,6 @@ export default function Home() {
               )}
             </div>
           </div>
-
-          <div className="mt-6">
-            <div className="flex items-center justify-center">
-              <button
-                className="rounded border border-slate-200 bg-white px-3 py-2 text-xs transition hover:bg-slate-50"
-                onClick={() => voice.setShowSummary((prev) => !prev)}
-              >
-                {voice.showSummary ? 'Hide Session Summary' : 'Show Session Summary'}
-              </button>
-            </div>
-            {voice.showSummary && (
-              <div className="mt-4">
-                <SessionSummaryPanel sessions={voice.sessionSummaries} />
-              </div>
-            )}
-          </div>
         </div>
       </div>
       <BottomPiano
@@ -669,6 +652,8 @@ export default function Home() {
     </>
   );
 }
+
+
 
 
 
