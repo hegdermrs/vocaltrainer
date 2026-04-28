@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
@@ -6,7 +6,7 @@ import { useParams } from 'next/navigation';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { getSessionArtifact } from '@/src/analysis/storage';
-import { PracticeTelemetryFrame, SessionArtifact } from '@/src/analysis/types';
+import { PracticeTelemetryFrame, SessionArtifact, VoiceSessionAnalysisReport } from '@/src/analysis/types';
 
 function formatDate(timestamp: string) {
   return new Date(timestamp).toLocaleString();
@@ -58,19 +58,40 @@ function scoreColor(score: number): string {
   return 'text-rose-600';
 }
 
-function getLessonHref(lesson: { video_url?: string; dropbox_url?: string; dropbox_path?: string }): string | null {
-  const candidate = lesson.dropbox_url ?? lesson.video_url ?? lesson.dropbox_path;
-  if (!candidate) return null;
-  return /^https?:\/\//i.test(candidate) ? candidate : null;
+const defaultScores = {
+  pitch: 0,
+  breathiness_control: 0,
+  sustain: 0,
+  dynamic_control: 0,
+  follow_accuracy: 0,
+};
+
+function getReportPayload(data: Partial<VoiceSessionAnalysisReport> | null | undefined) {
+  const report = (data as { report?: Partial<VoiceSessionAnalysisReport> } | null | undefined)?.report ?? data ?? {};
+  const scores = report?.scores ?? (data as { scores?: typeof defaultScores } | null | undefined)?.scores ?? defaultScores;
+
+  return {
+    report,
+    scores,
+    strengths: Array.isArray(report?.strengths) ? report.strengths : [],
+    issues: Array.isArray(report?.issues) ? report.issues : [],
+    priorityImprovements: Array.isArray(report?.priority_improvements) ? report.priority_improvements : [],
+    suggestedExercises: Array.isArray(report?.suggested_exercises) ? report.suggested_exercises : [],
+    evidence: Array.isArray(report?.evidence) ? report.evidence : [],
+  };
 }
 
-function getLessonLocationLabel(lesson: { video_url?: string; dropbox_url?: string; dropbox_path?: string }): string {
-  return lesson.dropbox_url ?? lesson.video_url ?? lesson.dropbox_path ?? 'Link coming soon';
+function isValidVideoUrl(url: unknown): url is string {
+  return typeof url === 'string' && url.startsWith('http');
 }
 
-function getLessonVideoUrl(lesson: { video_url?: string }): string | null {
-  if (!lesson.video_url) return null;
-  return /^https?:\/\//i.test(lesson.video_url) ? lesson.video_url : null;
+function getVideoMimeType(url: string, fallbackPath?: string): string | undefined {
+  const source = `${url} ${fallbackPath ?? ''}`.toLowerCase();
+
+  if (source.includes('.mov')) return 'video/quicktime';
+  if (source.includes('.webm')) return 'video/webm';
+  if (source.includes('.ogg') || source.includes('.ogv')) return 'video/ogg';
+  return 'video/mp4';
 }
 
 function buildSeries(frames: PracticeTelemetryFrame[], pick: (frame: PracticeTelemetryFrame) => number | undefined, limit = 180) {
@@ -237,7 +258,7 @@ export default function AnalysisPage() {
     );
   }
 
-  const report = artifact.analysisReport;
+  const { report, scores, strengths, issues, priorityImprovements, suggestedExercises, evidence } = getReportPayload(artifact.analysisReport);
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-slate-100 px-4 py-10">
@@ -268,15 +289,15 @@ export default function AnalysisPage() {
         ) : (
           <>
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-              <CoachScoreCard label="Pitch" score={report.scores.pitch} />
-              <CoachScoreCard label="Breath control" score={report.scores.breathiness_control} />
-              <CoachScoreCard label="Sustain" score={report.scores.sustain} />
-              <CoachScoreCard label={artifact.payload.practiceMode === 'assisted' ? 'Follow accuracy' : 'Dynamic control'} score={artifact.payload.practiceMode === 'assisted' ? report.scores.follow_accuracy : report.scores.dynamic_control} />
+              <CoachScoreCard label="Pitch" score={scores.pitch} />
+              <CoachScoreCard label="Breath control" score={scores.breathiness_control} />
+              <CoachScoreCard label="Sustain" score={scores.sustain} />
+              <CoachScoreCard label={artifact.payload.practiceMode === 'assisted' ? 'Follow accuracy' : 'Dynamic control'} score={artifact.payload.practiceMode === 'assisted' ? scores.follow_accuracy : scores.dynamic_control} />
             </div>
 
             <section className="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
               <div className="text-sm font-medium text-slate-500">Big picture</div>
-              <p className="mt-3 text-lg leading-8 text-slate-800">{report.summary}</p>
+              <p className="mt-3 text-lg leading-8 text-slate-800">{report?.summary ?? 'No summary available yet.'}</p>
             </section>
 
             {derived && (
@@ -318,16 +339,14 @@ export default function AnalysisPage() {
                   emptyLabel="No sustain data"
                 />
               </div>
-            )}
-
-            <div className="grid gap-6 lg:grid-cols-3">
+            )}            <div className="grid gap-6 lg:grid-cols-3">
               <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm lg:col-span-2">
                 <h2 className="text-xl font-semibold text-slate-900">What went well</h2>
                 <div className="mt-4 space-y-4">
-                  {report.strengths.map((item, index) => (
-                    <div key={`${item.title}-${index}`} className="rounded-xl border border-emerald-100 bg-emerald-50 p-4">
-                      <div className="font-semibold text-emerald-900">{item.title}</div>
-                      <div className="mt-1 text-sm leading-6 text-emerald-900/80">{item.detail}</div>
+                  {strengths.map((item, index) => (
+                    <div key={`${item?.title ?? 'strength'}-${index}`} className="rounded-xl border border-emerald-100 bg-emerald-50 p-4">
+                      <div className="font-semibold text-emerald-900">{item?.title ?? 'Strength'}</div>
+                      <div className="mt-1 text-sm leading-6 text-emerald-900/80">{item?.detail ?? ''}</div>
                     </div>
                   ))}
                 </div>
@@ -366,13 +385,13 @@ export default function AnalysisPage() {
               <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
                 <h2 className="text-xl font-semibold text-slate-900">What to focus on next</h2>
                 <div className="mt-4 space-y-4">
-                  {report.issues.map((item, index) => (
-                    <div key={`${item.title}-${index}`} className="rounded-xl border border-rose-100 bg-rose-50 p-4">
+                  {issues.map((item, index) => (
+                    <div key={`${item?.title ?? 'issue'}-${index}`} className="rounded-xl border border-rose-100 bg-rose-50 p-4">
                       <div className="flex items-center justify-between gap-2">
-                        <div className="font-semibold text-rose-900">{item.title}</div>
-                        <Badge variant="outline" className="capitalize">{item.severity}</Badge>
+                        <div className="font-semibold text-rose-900">{item?.title ?? 'Issue'}</div>
+                        <Badge variant="outline" className="capitalize">{item?.severity ?? 'low'}</Badge>
                       </div>
-                      <div className="mt-1 text-sm leading-6 text-rose-900/80">{item.detail}</div>
+                      <div className="mt-1 text-sm leading-6 text-rose-900/80">{item?.detail ?? ''}</div>
                     </div>
                   ))}
                 </div>
@@ -381,50 +400,65 @@ export default function AnalysisPage() {
               <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
                 <h2 className="text-xl font-semibold text-slate-900">Best next actions</h2>
                 <div className="mt-4 space-y-4">
-                  {report.priority_improvements.map((item, index) => (
-                    <div key={`${item.title}-${index}`} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                      <div className="font-semibold text-slate-900">{item.title}</div>
-                      <div className="mt-2 text-sm text-slate-700"><span className="font-medium">Do this:</span> {item.action}</div>
-                      <div className="mt-1 text-sm text-slate-700"><span className="font-medium">Why it matters:</span> {item.why}</div>
-                      {item.recommended_lessons && item.recommended_lessons.length > 0 && (
-                        <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4">
-                          <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Recommended lessons</div>
-                          <div className="mt-3 space-y-3">
-                            {item.recommended_lessons.map((lesson, lessonIndex) => {
-                              const lessonHref = getLessonHref(lesson);
-                              const locationLabel = getLessonLocationLabel(lesson);
+                  {priorityImprovements.map((improvement, improvementIndex) => {
+                    const lessons = Array.isArray(improvement?.recommended_lessons)
+                      ? improvement.recommended_lessons
+                      : [];
 
-                              return (
-                                <div key={`${lesson.id}-${lessonIndex}`} className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
-                                  <div className="flex flex-wrap items-start justify-between gap-3">
-                                    <div className="min-w-0 flex-1">
-                                      <div className="font-medium text-slate-900">{lesson.title}</div>
-                                      <div className="mt-1 text-sm leading-6 text-slate-700">{lesson.reason}</div>
-                                      <div className="mt-2 break-all text-xs text-slate-500">{locationLabel}</div>
-                                    </div>
-                                    {lessonHref ? (
-                                      <a
-                                        href={lessonHref}
-                                        target="_blank"
-                                        rel="noreferrer"
-                                        className="inline-flex items-center rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:bg-slate-100"
-                                      >
-                                        Open video
-                                      </a>
+                    return (
+                      <section key={`${improvement?.title ?? 'improvement'}-${improvementIndex}`} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                        <h3 className="font-semibold text-slate-900">{improvement?.title ?? 'Improvement'}</h3>
+                        <p className="mt-2 text-sm text-slate-700"><span className="font-medium">Do this:</span> {improvement?.action ?? ''}</p>
+                        <p className="mt-1 text-sm text-slate-700"><span className="font-medium">Why it matters:</span> {improvement?.why ?? ''}</p>
+
+                        {lessons.length > 0 && (
+                          <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4">
+                            <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Recommended lessons</h4>
+
+                            <div className="mt-3 space-y-3">
+                              {lessons.map((lesson, lessonIndex) => {
+                                const videoUrl = isValidVideoUrl(lesson?.video_url)
+                                  ? lesson.video_url
+                                  : null;
+
+                                return (
+                                  <div key={`${improvementIndex}-${lessonIndex}`} className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+                                    <h5 className="font-medium text-slate-900">{lesson?.title ?? 'Recommended lesson'}</h5>
+                                    <p className="mt-1 text-sm leading-6 text-slate-700">{lesson?.reason ?? ''}</p>
+
+                                    {videoUrl ? (
+                                      <div>
+                                        <video
+                                          controls
+                                          preload="metadata"
+                                          style={{ width: '100%', maxWidth: '720px', borderRadius: '12px', display: 'block', marginTop: '12px' }}
+                                        >
+                                          <source src={videoUrl} type={getVideoMimeType(videoUrl, lesson?.dropbox_path)} />
+                                          Your browser does not support the video tag.
+                                        </video>
+
+                                        <a
+                                          href={videoUrl}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          style={{ display: 'inline-block', marginTop: '8px' }}
+                                          className="text-sm font-medium text-sky-700 underline-offset-4 hover:underline"
+                                        >
+                                          Open video in new tab
+                                        </a>
+                                      </div>
                                     ) : (
-                                      <span className="inline-flex items-center rounded-md border border-dashed border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-500">
-                                        Dropbox link pending
-                                      </span>
+                                      <p className="mt-3 text-sm text-slate-500">Dropbox link pending</p>
                                     )}
                                   </div>
-                                </div>
-                              );
-                            })}
+                                );
+                              })}
+                            </div>
                           </div>
-                        </div>
-                      )}
-                    </div>
-                  ))}
+                        )}
+                      </section>
+                    );
+                  })}
                 </div>
               </section>
             </div>
@@ -432,7 +466,7 @@ export default function AnalysisPage() {
             <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
               <h2 className="text-xl font-semibold text-slate-900">Suggested practice plan</h2>
               <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                {report.suggested_exercises.map((item, index) => (
+                {suggestedExercises.map((item, index) => (
                   <div key={`${item.name}-${index}`} className="rounded-xl border border-sky-100 bg-sky-50 p-4">
                     <div className="font-semibold text-sky-900">{item.name}</div>
                     <div className="mt-1 text-sm leading-6 text-sky-900/80">{item.reason}</div>
@@ -447,7 +481,7 @@ export default function AnalysisPage() {
             <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
               <h2 className="text-xl font-semibold text-slate-900">Moments worth noticing</h2>
               <div className="mt-4 space-y-3">
-                {report.evidence.map((item, index) => (
+                {evidence.map((item, index) => (
                   <div key={`${item.timestamp_seconds}-${index}`} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div className="font-semibold text-slate-900">{item.label}</div>
@@ -471,6 +505,8 @@ export default function AnalysisPage() {
     </div>
   );
 }
+
+
 
 
 

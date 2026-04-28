@@ -1,4 +1,4 @@
-export type SessionAnalysisStatus =
+﻿export type SessionAnalysisStatus =
   | 'idle'
   | 'uploading'
   | 'transcribing'
@@ -116,6 +116,7 @@ export interface VoiceSessionAnalysisReport {
       title: string;
       dropbox_path?: string;
       dropbox_url?: string;
+      video_url?: string;
       reason: string;
       duration_minutes?: number | null;
     }>;
@@ -167,4 +168,6 @@ export interface SessionArtifactIndexItem {
   hasReport: boolean;
   reportSummary?: string;
 }
+
+
 
