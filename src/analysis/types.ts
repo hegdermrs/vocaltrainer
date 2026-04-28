@@ -88,6 +88,7 @@ export interface PracticeSessionPayload {
     bpm: number;
     exerciseId: string;
     transposeSemitones: number;
+    guideVolume: number;
   };
   summary: PracticeSessionSummary;
   metrics: PracticeTelemetrySession;
@@ -168,6 +169,9 @@ export interface SessionArtifactIndexItem {
   hasReport: boolean;
   reportSummary?: string;
 }
+
+
+
 
 
 

@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
@@ -20,7 +20,7 @@ import { AssistedPianoRoll } from '@/src/components/AssistedPianoRoll';
 import { useAssistedPractice } from '@/src/hooks/useAssistedPractice';
 import { useSessionAnalysis } from '@/src/hooks/useSessionAnalysis';
 import { useVoiceSession } from '@/src/hooks/useVoiceSession';
-import { AssistedConfig, EXERCISE_OPTIONS, clampBpm, clampTranspose } from '@/src/engine/assistedPractice';
+import { AssistedConfig, EXERCISE_OPTIONS, clampBpm, clampGuideVolume, clampTranspose } from '@/src/engine/assistedPractice';
 import { applyPreset, EnginePreset, getAvailablePresets } from '@/src/engine/engineSettings';
 
 type AnalysisNotice = {
@@ -411,7 +411,7 @@ export default function Home() {
                     </select>
                   </div>
                 </div>
-                <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
                   <div className="space-y-2">
                     <div className="flex items-center justify-between text-xs font-medium text-slate-500">
                       <span>Tempo (BPM)</span>
@@ -461,6 +461,25 @@ export default function Home() {
                       }
                     />
                     <div className="text-xs text-slate-500">Range: {assisted.assistedSequence.label}</div>
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-xs font-medium text-slate-500">
+                      <span>Guide Volume</span>
+                      <span>{assisted.assistedConfig.guideVolume}%</span>
+                    </div>
+                    <Slider
+                      min={0}
+                      max={150}
+                      step={1}
+                      value={[assisted.assistedConfig.guideVolume]}
+                      onValueChange={(values) =>
+                        handleAssistedConfigChange({
+                          ...assisted.assistedConfig,
+                          guideVolume: clampGuideVolume(values[0])
+                        })
+                      }
+                    />
+                    <div className="text-xs text-slate-500">Boost the guided piano on phones and smaller speakers.</div>
                   </div>
                 </div>
                 <div className="mt-3 rounded border border-slate-200 bg-slate-50 p-2 text-xs">
@@ -644,12 +663,22 @@ export default function Home() {
       <BottomPiano
         noteName={voice.engineState?.noteName}
         targetNoteName={assisted.assistedTargetNote}
-        playDetectedAudio={practiceMode !== 'assisted'}
+        playDetectedAudio={false}
       />
     </div>
     </>
   );
 }
+
+
+
+
+
+
+
+
+
+
 
 
 

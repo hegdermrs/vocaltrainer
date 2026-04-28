@@ -1,4 +1,4 @@
-import {
+﻿import {
   AssistedConfig,
   AssistedExerciseId,
   AssistedVoiceProfile,
@@ -38,7 +38,18 @@ export interface AssistedGuideState {
   exerciseId: AssistedExerciseId;
   transposeSemitones: number;
   bpm: number;
+  guideVolume: number;
   isRunning: boolean;
+}
+
+const DESKTOP_GUIDE_GAIN = 0.95;
+const MOBILE_GUIDE_GAIN = 1.15;
+
+function getGuidePlaybackGain(volumePercent: number): number {
+  if (typeof navigator === 'undefined') return DESKTOP_GUIDE_GAIN * (volumePercent / 100);
+  const ua = navigator.userAgent.toLowerCase();
+  const baseGain = /android|iphone|ipad|ipod|mobile/.test(ua) ? MOBILE_GUIDE_GAIN : DESKTOP_GUIDE_GAIN;
+  return baseGain * (volumePercent / 100);
 }
 
 export class AssistedGuide {
@@ -55,6 +66,7 @@ export class AssistedGuide {
     exerciseId: 'three_tone',
     transposeSemitones: 0,
     bpm: 80,
+    guideVolume: 100,
     isRunning: false
   };
   private onTargetChange: ((state: AssistedGuideState) => void) | null = null;
@@ -123,16 +135,17 @@ export class AssistedGuide {
     if (!this.state.isRunning || !this.sequence.length) return;
     const noteName = this.sequence[this.index];
     const midi = noteNameToMidi(noteName);
-    if (midi !== null && this.instrument && this.audioContext) {
+    const isRest = noteName === 'Rest' || midi === null;
+    if (!isRest && this.instrument && this.audioContext) {
       void this.audioContext.resume();
       const beatSeconds = 60 / this.state.bpm;
       this.instrument.play(midi, this.audioContext.currentTime, {
-        gain: 0.6,
-        duration: Math.max(0.12, beatSeconds * 0.75)
+        gain: getGuidePlaybackGain(this.state.guideVolume),
+        duration: Math.max(0.16, beatSeconds * 0.9)
       });
     }
-    this.state.targetNoteName = noteName;
-    this.state.targetMidi = midi ?? undefined;
+    this.state.targetNoteName = isRest ? undefined : noteName;
+    this.state.targetMidi = isRest ? undefined : midi ?? undefined;
     this.emit();
     this.index = (this.index + 1) % this.sequence.length;
   }
@@ -148,6 +161,7 @@ export class AssistedGuide {
     this.state.exerciseId = config.exerciseId;
     this.state.transposeSemitones = clampTranspose(config.transposeSemitones);
     this.state.bpm = clampBpm(config.bpm);
+    this.state.guideVolume = config.guideVolume;
     this.sequence = getExerciseSequence({
       ...config,
       bpm: this.state.bpm,
@@ -162,3 +176,8 @@ export class AssistedGuide {
     this.startTimer();
   }
 }
+
+
+
+
+

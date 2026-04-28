@@ -6,6 +6,7 @@ import {
   AssistedConfig,
   DEFAULT_ASSISTED_CONFIG,
   clampBpm,
+  clampGuideVolume,
   clampTranspose,
   evaluateAssistedFollow,
   getExerciseSequence
@@ -31,7 +32,8 @@ function loadAssistedConfig(): AssistedConfig {
         parsed.exerciseId === 'long_arpeggio'
           ? parsed.exerciseId
           : 'three_tone',
-      transposeSemitones: clampTranspose(parsed.transposeSemitones ?? 0)
+      transposeSemitones: clampTranspose(parsed.transposeSemitones ?? 0),
+      guideVolume: clampGuideVolume(parsed.guideVolume ?? DEFAULT_ASSISTED_CONFIG.guideVolume)
     };
   } catch {
     return DEFAULT_ASSISTED_CONFIG;
@@ -84,7 +86,8 @@ export function useAssistedPractice() {
         voiceProfile: next.voiceProfile,
         bpm: clampBpm(next.bpm),
         exerciseId: next.exerciseId,
-        transposeSemitones: clampTranspose(next.transposeSemitones)
+        transposeSemitones: clampTranspose(next.transposeSemitones),
+        guideVolume: clampGuideVolume(next.guideVolume)
       };
       persistConfig(normalized);
       if (options?.restartGuide && isGuideRunningRef.current && guideRef.current) {
@@ -185,3 +188,6 @@ export function useAssistedPractice() {
     stopGuide
   };
 }
+
+
+
