@@ -105,19 +105,45 @@ function buildSeries(frames: PracticeTelemetryFrame[], pick: (frame: PracticeTel
   return sampled;
 }
 
-function pathFromValues(values: number[]): string {
-  if (values.length === 0) return '';
+function buildChartPoints(values: number[]) {
+  if (values.length === 0) return [] as Array<{ x: number; y: number }>;
   const max = Math.max(...values);
   const min = Math.min(...values);
   const range = max - min || 1;
 
-  return values
-    .map((value, index) => {
-      const x = (index / Math.max(1, values.length - 1)) * 100;
-      const y = 100 - ((value - min) / range) * 100;
-      return `${index === 0 ? 'M' : 'L'} ${x.toFixed(2)} ${y.toFixed(2)}`;
-    })
-    .join(' ');
+  return values.map((value, index) => ({
+    x: (index / Math.max(1, values.length - 1)) * 100,
+    y: 60 - ((value - min) / range) * 48 - 6
+  }));
+}
+
+function buildSmoothLinePath(points: Array<{ x: number; y: number }>): string {
+  if (points.length === 0) return '';
+  if (points.length === 1) return `M ${points[0].x.toFixed(2)} ${points[0].y.toFixed(2)}`;
+
+  const commands = [`M ${points[0].x.toFixed(2)} ${points[0].y.toFixed(2)}`];
+
+  for (let index = 0; index < points.length - 1; index += 1) {
+    const current = points[index];
+    const next = points[index + 1];
+    const controlX = ((current.x + next.x) / 2).toFixed(2);
+    commands.push(
+      `C ${controlX} ${current.y.toFixed(2)}, ${controlX} ${next.y.toFixed(2)}, ${next.x.toFixed(2)} ${next.y.toFixed(2)}`
+    );
+  }
+
+  return commands.join(' ');
+}
+
+function buildAreaPath(points: Array<{ x: number; y: number }>, linePath: string): string {
+  if (!points.length || !linePath) return '';
+  const firstPoint = points[0];
+  const lastPoint = points[points.length - 1];
+  return `${linePath} L ${lastPoint.x.toFixed(2)} 60 L ${firstPoint.x.toFixed(2)} 60 Z`;
+}
+
+function slugifyChartId(title: string): string {
+  return title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 }
 
 function TimelineChart({
@@ -137,37 +163,57 @@ function TimelineChart({
   valueLabel: string;
   emptyLabel: string;
 }) {
-  const path = useMemo(() => pathFromValues(values), [values]);
-  const areaPath = useMemo(() => {
-    if (!path) return '';
-    const firstX = 0;
-    const lastX = 100;
-    const line = path.replace(/^M /, '');
-    return `M ${firstX} 100 ${line} L ${lastX} 100 Z`;
-  }, [path]);
-
+  const points = useMemo(() => buildChartPoints(values), [values]);
+  const linePath = useMemo(() => buildSmoothLinePath(points), [points]);
+  const areaPath = useMemo(() => buildAreaPath(points, linePath), [linePath, points]);
   const latestValue = values.length > 0 ? values[values.length - 1] : null;
+  const latestPoint = points.length > 0 ? points[points.length - 1] : null;
+  const chartId = useMemo(() => slugifyChartId(title), [title]);
 
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+    <section className="rounded-3xl border border-slate-200/80 bg-white p-5 shadow-sm shadow-slate-200/60">
       <div className="flex items-start justify-between gap-3">
         <div>
           <h3 className="text-lg font-semibold text-slate-900">{title}</h3>
           <p className="text-sm text-slate-600">{subtitle}</p>
         </div>
         <div className="text-right">
-          <div className="text-xs uppercase tracking-wide text-slate-400">Latest</div>
-          <div className="text-sm font-semibold text-slate-700">{latestValue !== null ? `${latestValue.toFixed(1)} ${valueLabel}` : emptyLabel}</div>
+          <div className="text-[11px] uppercase tracking-[0.18em] text-slate-400">Latest</div>
+          <div className="mt-1 text-sm font-semibold text-slate-700">{latestValue !== null ? `${latestValue.toFixed(1)} ${valueLabel}` : emptyLabel}</div>
         </div>
       </div>
-      <div className="mt-4 rounded-xl border border-slate-100 bg-slate-50 p-3">
+      <div className="mt-4 rounded-2xl border border-slate-100 bg-gradient-to-b from-slate-50 to-white p-4">
         {values.length > 1 ? (
-          <svg viewBox="0 0 100 100" className="h-40 w-full" preserveAspectRatio="none">
-            <path d={areaPath} fill={fill} opacity="0.45" />
-            <path d={path} fill="none" stroke={stroke} strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" />
+          <svg viewBox="0 0 100 60" className="h-44 w-full" preserveAspectRatio="none">
+            <defs>
+              <linearGradient id={`${chartId}-fill`} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={fill} stopOpacity="0.32" />
+                <stop offset="100%" stopColor={fill} stopOpacity="0.04" />
+              </linearGradient>
+            </defs>
+            {[12, 24, 36, 48].map((y) => (
+              <line
+                key={`${chartId}-grid-${y}`}
+                x1="0"
+                y1={y}
+                x2="100"
+                y2={y}
+                stroke="rgba(148, 163, 184, 0.16)"
+                strokeWidth="0.6"
+                strokeDasharray="2 3"
+              />
+            ))}
+            <path d={areaPath} fill={`url(#${chartId}-fill)`} />
+            <path d={linePath} fill="none" stroke={stroke} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+            {latestPoint && (
+              <>
+                <circle cx={latestPoint.x} cy={latestPoint.y} r="2.8" fill="white" stroke={stroke} strokeWidth="1.4" />
+                <circle cx={latestPoint.x} cy={latestPoint.y} r="1.2" fill={stroke} />
+              </>
+            )}
           </svg>
         ) : (
-          <div className="flex h-40 items-center justify-center text-sm text-slate-400">{emptyLabel}</div>
+          <div className="flex h-44 items-center justify-center text-sm text-slate-400">{emptyLabel}</div>
         )}
       </div>
       <div className="mt-2 flex justify-between text-xs text-slate-400">

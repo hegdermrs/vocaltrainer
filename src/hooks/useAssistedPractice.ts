@@ -46,9 +46,11 @@ export function useAssistedPractice() {
   const [assistedFollowStatus, setAssistedFollowStatus] =
     useState<'on-target' | 'near' | 'off' | 'no-pitch'>('no-pitch');
   const [assistedFollowAccuracy, setAssistedFollowAccuracy] = useState(0);
+  const [isGuidePaused, setIsGuidePaused] = useState(false);
 
   const guideRef = useRef<AssistedGuide | null>(null);
   const isGuideRunningRef = useRef(false);
+  const isGuidePausedRef = useRef(false);
   const targetRef = useRef<string | undefined>(undefined);
   const eligibleFramesRef = useRef(0);
   const hitFramesRef = useRef(0);
@@ -59,7 +61,10 @@ export function useAssistedPractice() {
     guideRef.current = new AssistedGuide();
     guideRef.current.setOnTargetChange((state) => {
       targetRef.current = state.targetNoteName;
+      isGuideRunningRef.current = state.isRunning;
+      isGuidePausedRef.current = state.isPaused;
       setAssistedTargetNote(state.targetNoteName);
+      setIsGuidePaused(state.isPaused);
     });
     setAssistedConfig(loadAssistedConfig());
 
@@ -109,16 +114,17 @@ export function useAssistedPractice() {
   const clearAssistedUi = useCallback(() => {
     targetRef.current = undefined;
     setAssistedTargetNote(undefined);
+    setIsGuidePaused(false);
     resetSessionTracking();
   }, [resetSessionTracking]);
 
   const applyAssistedState = useCallback((state: EngineState, enabled: boolean): EngineState => {
-    if (!enabled) {
+    if (!enabled || isGuidePausedRef.current) {
       return {
         ...state,
         assistedTargetNote: undefined,
         assistedFollowHit: undefined,
-        assistedFollowAccuracy: undefined
+        assistedFollowAccuracy: pendingAccuracyRef.current
       };
     }
 
@@ -160,6 +166,28 @@ export function useAssistedPractice() {
     if (!enabled || !guideRef.current) return;
     await guideRef.current.start(config);
     isGuideRunningRef.current = true;
+    isGuidePausedRef.current = false;
+    setIsGuidePaused(false);
+  }, []);
+
+  const pauseGuide = useCallback(() => {
+    if (guideRef.current) {
+      guideRef.current.pause();
+    }
+    isGuideRunningRef.current = false;
+    isGuidePausedRef.current = true;
+    setIsGuidePaused(true);
+    targetRef.current = undefined;
+    setAssistedTargetNote(undefined);
+  }, []);
+
+  const resumeGuide = useCallback(() => {
+    if (guideRef.current) {
+      guideRef.current.resume();
+    }
+    isGuideRunningRef.current = true;
+    isGuidePausedRef.current = false;
+    setIsGuidePaused(false);
   }, []);
 
   const stopGuide = useCallback(() => {
@@ -167,6 +195,8 @@ export function useAssistedPractice() {
       guideRef.current.stop();
     }
     isGuideRunningRef.current = false;
+    isGuidePausedRef.current = false;
+    setIsGuidePaused(false);
     targetRef.current = undefined;
     setAssistedTargetNote(undefined);
   }, []);
@@ -178,6 +208,7 @@ export function useAssistedPractice() {
     assistedTargetNote,
     assistedFollowStatus,
     assistedFollowAccuracy,
+    isGuidePaused,
     assistedSequence,
     updateAssistedConfig,
     applyAssistedState,
@@ -185,6 +216,8 @@ export function useAssistedPractice() {
     resetSessionTracking,
     clearAssistedUi,
     startGuideIfNeeded,
+    pauseGuide,
+    resumeGuide,
     stopGuide
   };
 }

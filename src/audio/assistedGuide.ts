@@ -40,6 +40,7 @@ export interface AssistedGuideState {
   bpm: number;
   guideVolume: number;
   isRunning: boolean;
+  isPaused: boolean;
 }
 
 const DESKTOP_GUIDE_GAIN = 0.95;
@@ -59,6 +60,7 @@ export class AssistedGuide {
   private timer: ReturnType<typeof setInterval> | null = null;
   private sequence: string[] = [];
   private index = 0;
+  private currentStepIndex: number | null = null;
   private state: AssistedGuideState = {
     targetNoteName: undefined,
     targetMidi: undefined,
@@ -67,7 +69,8 @@ export class AssistedGuide {
     transposeSemitones: 0,
     bpm: 80,
     guideVolume: 100,
-    isRunning: false
+    isRunning: false,
+    isPaused: false
   };
   private onTargetChange: ((state: AssistedGuideState) => void) | null = null;
 
@@ -87,10 +90,62 @@ export class AssistedGuide {
   }
 
   updateConfig(config: AssistedConfig): void {
+    const nextTranspose = clampTranspose(config.transposeSemitones);
+    const nextBpm = clampBpm(config.bpm);
+    const requiresSequenceRestart =
+      this.state.profile !== config.voiceProfile ||
+      this.state.exerciseId !== config.exerciseId ||
+      this.state.transposeSemitones !== nextTranspose;
+    const bpmChanged = this.state.bpm !== nextBpm;
+    const wasPaused = this.state.isPaused;
+
     this.applyConfig(config);
-    if (this.state.isRunning) {
-      this.restartRunningPattern();
+
+    if (!this.state.isRunning && !this.state.isPaused) {
+      this.emit();
+      return;
     }
+
+    if (requiresSequenceRestart) {
+      this.index = 0;
+      this.currentStepIndex = null;
+      if (wasPaused) {
+        this.state.targetNoteName = undefined;
+        this.state.targetMidi = undefined;
+        this.emit();
+        return;
+      }
+      this.restartRunningPattern();
+      return;
+    }
+
+    if (bpmChanged && this.state.isRunning) {
+      this.startTimer();
+    }
+
+    this.emit();
+  }
+
+  pause(): void {
+    if (!this.state.isRunning) return;
+    if (this.timer) {
+      clearInterval(this.timer);
+      this.timer = null;
+    }
+    this.state.isRunning = false;
+    this.state.isPaused = true;
+    this.state.targetNoteName = undefined;
+    this.state.targetMidi = undefined;
+    this.emit();
+  }
+
+  resume(): void {
+    if (!this.state.isPaused || !this.sequence.length) return;
+    this.state.isPaused = false;
+    this.state.isRunning = true;
+    const resumeIndex = this.currentStepIndex ?? this.index;
+    this.playStep(resumeIndex);
+    this.startTimer();
   }
 
   stop(): void {
@@ -98,7 +153,10 @@ export class AssistedGuide {
       clearInterval(this.timer);
       this.timer = null;
     }
+    this.index = 0;
+    this.currentStepIndex = null;
     this.state.isRunning = false;
+    this.state.isPaused = false;
     this.state.targetNoteName = undefined;
     this.state.targetMidi = undefined;
     this.emit();
@@ -131,9 +189,10 @@ export class AssistedGuide {
     this.timer = setInterval(() => this.playStep(), Math.max(stepMs, 80));
   }
 
-  private playStep(): void {
+  private playStep(stepIndex = this.index): void {
     if (!this.state.isRunning || !this.sequence.length) return;
-    const noteName = this.sequence[this.index];
+    const safeIndex = ((stepIndex % this.sequence.length) + this.sequence.length) % this.sequence.length;
+    const noteName = this.sequence[safeIndex];
     const midi = noteNameToMidi(noteName);
     const isRest = noteName === 'Rest' || midi === null;
     if (!isRest && this.instrument && this.audioContext) {
@@ -146,8 +205,9 @@ export class AssistedGuide {
     }
     this.state.targetNoteName = isRest ? undefined : noteName;
     this.state.targetMidi = isRest ? undefined : midi ?? undefined;
+    this.currentStepIndex = safeIndex;
     this.emit();
-    this.index = (this.index + 1) % this.sequence.length;
+    this.index = (safeIndex + 1) % this.sequence.length;
   }
 
   private emit(): void {
@@ -171,11 +231,15 @@ export class AssistedGuide {
 
   private restartRunningPattern(): void {
     this.index = 0;
+    this.currentStepIndex = null;
     this.state.isRunning = true;
+    this.state.isPaused = false;
     this.playStep();
     this.startTimer();
   }
 }
+
+
 
 
 

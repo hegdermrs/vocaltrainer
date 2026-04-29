@@ -5,6 +5,19 @@ import { VoiceAnalyzer } from '@/src/audio/VoiceAnalyzer';
 import { EngineState } from '@/src/engine/types';
 import { getCalibrationState, startCalibration } from '@/src/engine/calibration';
 import { getCurrentPreset, EnginePreset } from '@/src/engine/engineSettings';
+
+function getPitchAccuracyCredit(cents: number): number {
+  const absCents = Math.abs(cents);
+  if (absCents <= 12) return 1;
+  if (absCents <= 25) return 0.98;
+  if (absCents <= 40) return 0.94;
+  if (absCents <= 55) return 0.88;
+  if (absCents <= 70) return 0.78;
+  if (absCents <= 90) return 0.64;
+  if (absCents <= 120) return 0.42;
+  return 0.18;
+}
+
 import {
   PracticeSessionPayload,
   PracticeTelemetryFrame,
@@ -60,7 +73,7 @@ export function useVoiceSession({
   const calibrationStartedCapture = useRef(false);
   const stabilitySumRef = useRef(0);
   const stabilityCountRef = useRef(0);
-  const inTuneFramesRef = useRef(0);
+  const tuningScoreSumRef = useRef(0);
   const totalPitchFramesRef = useRef(0);
   const maxSustainRef = useRef(0);
   const telemetryFramesRef = useRef<PracticeTelemetryFrame[]>([]);
@@ -176,7 +189,7 @@ export function useVoiceSession({
   const resetSessionAccumulators = useCallback(() => {
     stabilitySumRef.current = 0;
     stabilityCountRef.current = 0;
-    inTuneFramesRef.current = 0;
+    tuningScoreSumRef.current = 0;
     totalPitchFramesRef.current = 0;
     maxSustainRef.current = 0;
     telemetryFramesRef.current = [];
@@ -309,9 +322,7 @@ export function useVoiceSession({
         }
         if (nextState.cents !== undefined && nextState.pitchConfidence !== undefined) {
           totalPitchFramesRef.current += 1;
-          if (Math.abs(nextState.cents) <= 50) {
-            inTuneFramesRef.current += 1;
-          }
+          tuningScoreSumRef.current += getPitchAccuracyCredit(nextState.cents);
         }
         if ((nextState.bestSustainSeconds ?? 0) > maxSustainRef.current) {
           maxSustainRef.current = nextState.bestSustainSeconds ?? 0;
@@ -348,7 +359,7 @@ export function useVoiceSession({
     setIsActive(false);
 
     const avgStability = stabilityCountRef.current > 0 ? stabilitySumRef.current / stabilityCountRef.current : 0;
-    const tuningAccuracy = totalPitchFramesRef.current > 0 ? inTuneFramesRef.current / totalPitchFramesRef.current : 0;
+    const tuningAccuracy = totalPitchFramesRef.current > 0 ? tuningScoreSumRef.current / totalPitchFramesRef.current : 0;
     const followAccuracy = engineState?.assistedFollowAccuracy ?? 0;
     const sessionStart = sessionStartRef.current ?? Date.now();
     const durationSeconds = Math.max(0, (Date.now() - sessionStart) / 1000);

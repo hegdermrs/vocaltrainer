@@ -1,18 +1,18 @@
 ﻿'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
+import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Input } from '@/components/ui/input';
 import { Slider } from '@/components/ui/slider';
-import { Play, Square, Mic, MicOff, Timer, Mic2, Send } from 'lucide-react';
+import { History, Mic, Mic2, MicOff, Pause, Play, Send, Settings2, Square, Timer } from 'lucide-react';
 import { PitchModule } from '@/src/components/modules/PitchModule';
 import { DynamicRangeModule } from '@/src/components/modules/DynamicRangeModule';
 import { AirflowModule } from '@/src/components/modules/AirflowModule';
 import { SustainModule } from '@/src/components/modules/SustainModule';
 import { CalibrationBanner } from '@/src/components/CalibrationBanner';
-import { DebugPanel } from '@/src/components/DebugPanel';
 import { InfoTooltip } from '@/src/components/ui/info-tooltip';
 import { BottomPiano } from '@/src/components/BottomPiano';
 import { AssistedPianoRoll } from '@/src/components/AssistedPianoRoll';
@@ -33,6 +33,8 @@ export default function Home() {
   const [practiceMode, setPracticeMode] = useState<'free' | 'assisted'>('free');
   const [analysisNotice, setAnalysisNotice] = useState<AnalysisNotice | null>(null);
   const [pendingAnalysisId, setPendingAnalysisId] = useState<number | null>(null);
+  const [resumeCountdown, setResumeCountdown] = useState<number | null>(null);
+  const [showExercisePattern, setShowExercisePattern] = useState(false);
   const assisted = useAssistedPractice();
   const analysis = useSessionAnalysis();
   const voice = useVoiceSession({
@@ -50,6 +52,8 @@ export default function Home() {
   const isAnalyzing = analysis.analysisBusyId !== null;
   const analysisDialogOpen = pendingAnalysisId !== null || analysisNotice !== null;
   const [countdownNow, setCountdownNow] = useState(() => Date.now());
+  const latestAnalysisArtifact = analysis.recentAnalysisArtifacts[0] ?? null;
+  const pastAnalysisArtifacts = analysis.recentAnalysisArtifacts.slice(1);
 
   useEffect(() => {
     if (analysisNotice?.state !== 'processing' || !analysisNotice.startedAt) {
@@ -77,6 +81,30 @@ export default function Home() {
       isWaiting: remainingSeconds === 0
     };
   }, [analysisNotice, countdownNow]);
+
+  useEffect(() => {
+    if (resumeCountdown === null) {
+      return;
+    }
+
+    if (resumeCountdown <= 0) {
+      assisted.resumeGuide();
+      setResumeCountdown(null);
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      setResumeCountdown((current) => (current === null ? null : current - 1));
+    }, 1000);
+
+    return () => window.clearTimeout(timeout);
+  }, [assisted.resumeGuide, resumeCountdown]);
+
+  useEffect(() => {
+    if (!voice.isActive || practiceMode !== 'assisted') {
+      setResumeCountdown(null);
+    }
+  }, [practiceMode, voice.isActive]);
 
   const analysisActionLabel = useMemo(() => {
     if (!analysisNotice || analysisNotice.state !== 'processing') {
@@ -159,14 +187,60 @@ export default function Home() {
     assisted.updateAssistedConfig(next, {
       restartGuide: voice.isActive && practiceMode === 'assisted'
     });
-  }, [assisted, practiceMode, voice.isActive]);
+  }, [assisted.updateAssistedConfig, practiceMode, voice.isActive]);
+
+  const handlePauseAssistedGuide = useCallback(() => {
+    setResumeCountdown(null);
+    assisted.pauseGuide();
+  }, [assisted.pauseGuide]);
+
+  const handleResumeAssistedGuide = useCallback(() => {
+    setResumeCountdown(3);
+  }, []);
 
   const handleStopAndSend = useCallback(async () => {
+    setResumeCountdown(null);
     const artifact = await voice.handleStop();
     if (artifact) {
       await confirmAndRunAnalysis(artifact.id);
     }
   }, [confirmAndRunAnalysis, voice]);
+
+  const renderArtifactCard = useCallback((artifact: (typeof analysis.recentAnalysisArtifacts)[number], compact = false) => (
+    <div
+      key={artifact.id}
+      className={`flex flex-col gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 ${compact ? '' : 'sm:flex-row sm:items-center sm:justify-between'}`}
+    >
+      <div className="min-w-0">
+        <div className="text-sm font-medium text-slate-800">
+          {new Date(artifact.timestamp).toLocaleString()}
+        </div>
+        <div className="text-xs text-slate-500">
+          {artifact.practiceMode} mode - status: {artifact.analysisStatus}
+        </div>
+        {artifact.reportSummary && (
+          <div className="mt-1 line-clamp-2 text-xs text-slate-600">{artifact.reportSummary}</div>
+        )}
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {artifact.hasReport ? (
+          <Button variant="outline" onClick={() => analysis.openAnalysisReport(artifact.id)}>
+            View report
+          </Button>
+        ) : artifact.hasAudio ? (
+          <Button
+            variant="outline"
+            onClick={() => void confirmAndRunAnalysis(artifact.id)}
+            disabled={isAnalyzing}
+          >
+            {analysis.analysisBusyId === artifact.id ? 'Processing...' : 'Analyze with AI'}
+          </Button>
+        ) : (
+          <Badge variant="outline">Audio uploaded and removed</Badge>
+        )}
+      </div>
+    </div>
+  ), [analysis, confirmAndRunAnalysis, isAnalyzing]);
 
   return (
     <>
@@ -243,67 +317,20 @@ export default function Home() {
       <div className="container mx-auto px-4 py-8 pb-36">
         <div className="mx-auto max-w-7xl">
           <div className="mb-8 text-center">
-            <div className="flex flex-col gap-4 md:gap-2">
+            <div className="flex flex-col items-center gap-3">
               <h1 className="bg-gradient-to-r from-slate-900 to-slate-700 bg-clip-text text-3xl font-bold text-transparent md:text-4xl">
                 Voice Trainer
               </h1>
-              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                <div className="flex flex-wrap items-center justify-center gap-2 md:justify-start">
-                  <span className="text-xs text-muted-foreground">Preset</span>
-                  <select
-                    className="h-8 rounded border border-slate-200 bg-white px-2 text-xs"
-                    value={voice.preset}
-                    onChange={(e) => {
-                      const value = e.target.value as EnginePreset | 'custom';
-                      if (value === 'custom') {
-                        voice.setPreset('custom');
-                        return;
-                      }
-                      applyPreset(value);
-                      voice.setPreset(value);
-                    }}
-                  >
-                    <option value="custom">Custom</option>
-                    {getAvailablePresets().map((option) => (
-                      <option key={option.id} value={option.id}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="flex items-center justify-center gap-2 md:justify-end">
-                  <div className="text-[11px] text-slate-600">
-                    <span className="font-medium">Mic</span>{' '}
-                    <span
-                      className={
-                        voice.inputLevel >= 70
-                          ? 'text-red-600'
-                          : voice.inputLevel >= 40
-                            ? 'text-amber-600'
-                            : voice.inputLevel > 0
-                              ? 'text-green-600'
-                              : 'text-slate-400'
-                      }
-                    >
-                      {voice.inputLevel.toFixed(0)}%
-                    </span>
-                  </div>
-                  <select
-                    className="h-7 max-w-[160px] rounded border border-slate-200 bg-white px-2 text-[11px]"
-                    value={voice.selectedDeviceId}
-                    onChange={(e) => voice.setSelectedDeviceId(e.target.value)}
-                  >
-                    {voice.audioDevices.length === 0 && <option value="">Default mic</option>}
-                    {voice.audioDevices.map((device) => (
-                      <option key={device.deviceId} value={device.deviceId}>
-                        {device.label || 'Microphone'}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+              <div className="flex flex-wrap items-center justify-center gap-2">
+                <Badge variant="outline" className="capitalize">
+                  {practiceMode === 'assisted' ? 'Assisted practice' : 'Free practice'}
+                </Badge>
+                <Badge variant="secondary">Real-time coaching</Badge>
               </div>
+              <p className="max-w-2xl text-balance text-sm text-slate-600 md:text-base">
+                Start with one button. The detailed setup lives below, so the practice flow stays clear and easy to follow.
+              </p>
             </div>
-            <p className="text-lg text-slate-600">Real-time voice analysis and training tool</p>
           </div>
 
           <div className="mb-8 flex flex-col items-center gap-4">
@@ -333,6 +360,19 @@ export default function Home() {
                 </Button>
               ) : (
                 <>
+                  {practiceMode === 'assisted' && (
+                    assisted.isGuidePaused ? (
+                      <Button size="lg" variant="secondary" onClick={handleResumeAssistedGuide} className="gap-3 px-10 py-7 text-xl" disabled={resumeCountdown !== null}>
+                        <Play className="h-6 w-6" />
+                        {resumeCountdown !== null ? `Resuming in ${resumeCountdown}...` : 'Resume Guided Practice'}
+                      </Button>
+                    ) : (
+                      <Button size="lg" variant="outline" onClick={handlePauseAssistedGuide} className="gap-3 px-10 py-7 text-xl" disabled={resumeCountdown !== null}>
+                        <Pause className="h-6 w-6" />
+                        Pause Guided Practice
+                      </Button>
+                    )
+                  )}
                   <Button size="lg" variant="destructive" onClick={() => void voice.handleStop()} className="gap-3 px-10 py-7 text-xl">
                     <Square className="h-6 w-6" />
                     Stop Session
@@ -345,7 +385,7 @@ export default function Home() {
               )}
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center justify-center gap-2">
               {voice.isActive ? (
                 <>
                   <Mic className="h-5 w-5 animate-pulse text-green-600" />
@@ -357,138 +397,263 @@ export default function Home() {
                 <>
                   <MicOff className="h-5 w-5 text-slate-400" />
                   <Badge variant="secondary">Inactive</Badge>
-                  <Button size="sm" variant="outline" onClick={voice.handleCalibrate} className="ml-2 gap-2">
-                    <Timer className="h-4 w-4" />
-                    Calibrate (5s)
-                  </Button>
                 </>
+              )}
+              {practiceMode === 'assisted' && (
+                <Badge variant="outline" className="capitalize">
+                  {EXERCISE_OPTIONS.find((option) => option.id === assisted.assistedConfig.exerciseId)?.label ?? 'Guided exercise'}
+                </Badge>
               )}
             </div>
 
-            {practiceMode === 'assisted' && (
-              <div className="w-full max-w-2xl rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-600">
-                <div className="mb-1 font-semibold text-slate-800">Assisted Practice</div>
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <div className="text-xs font-medium text-slate-500">Voice Profile</div>
-                    <div className="grid grid-cols-2 gap-2">
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant={assisted.assistedConfig.voiceProfile === 'male' ? 'default' : 'outline'}
-                        onClick={() => handleAssistedConfigChange({ ...assisted.assistedConfig, voiceProfile: 'male' })}
-                      >
-                        Male
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant={assisted.assistedConfig.voiceProfile === 'female' ? 'default' : 'outline'}
-                        onClick={() => handleAssistedConfigChange({ ...assisted.assistedConfig, voiceProfile: 'female' })}
-                      >
-                        Female
-                      </Button>
+            <div className="w-full max-w-3xl">
+              <Accordion type="multiple" defaultValue={practiceMode === 'assisted' ? ['practice-settings'] : []} className="rounded-xl border border-slate-200 bg-white px-4 shadow-sm">
+                <AccordionItem value="practice-settings" className="border-none">
+                  <AccordionTrigger className="py-4 text-left hover:no-underline">
+                    <div className="flex items-center gap-3">
+                      <div className="rounded-full bg-slate-100 p-2 text-slate-700">
+                        <Settings2 className="h-4 w-4" />
+                      </div>
+                      <div>
+                        <div className="text-sm font-semibold text-slate-900">Practice settings</div>
+                        <div className="text-xs font-normal text-slate-500">
+                          Adjust your setup, microphone, and guided exercise options when you need them.
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                  <div className="space-y-2">
-                    <div className="text-xs font-medium text-slate-500">Scale</div>
-                    <select
-                      className="h-9 w-full rounded border border-slate-200 bg-white px-2 text-sm"
-                      value={assisted.assistedConfig.exerciseId}
-                      onChange={(e) =>
-                        handleAssistedConfigChange({
-                          ...assisted.assistedConfig,
-                          exerciseId: e.target.value as AssistedConfig['exerciseId']
-                        })
-                      }
-                    >
-                      {EXERCISE_OPTIONS.map((option) => (
-                        <option key={option.id} value={option.id}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-                <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between text-xs font-medium text-slate-500">
-                      <span>Tempo (BPM)</span>
-                      <span>{assisted.assistedConfig.bpm}</span>
+                  </AccordionTrigger>
+                  <AccordionContent className="pb-4">
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+                      <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                        <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Session setup</div>
+                        <label className="mb-1 block text-xs font-medium text-slate-600">Preset</label>
+                        <select
+                          className="mb-3 h-9 w-full rounded border border-slate-200 bg-white px-2 text-sm"
+                          value={voice.preset}
+                          onChange={(e) => {
+                            const value = e.target.value as EnginePreset | 'custom';
+                            if (value === 'custom') {
+                              voice.setPreset('custom');
+                              return;
+                            }
+                            applyPreset(value);
+                            voice.setPreset(value);
+                          }}
+                        >
+                          <option value="custom">Custom</option>
+                          {getAvailablePresets().map((option) => (
+                            <option key={option.id} value={option.id}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                        <div className="flex items-center justify-between gap-2 text-xs text-slate-500">
+                          <span>Calibration</span>
+                          <Button size="sm" variant="outline" onClick={voice.handleCalibrate} className="gap-2">
+                            <Timer className="h-4 w-4" />
+                            Calibrate (5s)
+                          </Button>
+                        </div>
+                      </div>
+
+                      <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                        <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Microphone</div>
+                        <div className="mb-2 text-xs text-slate-600">
+                          Input level:{' '}
+                          <span
+                            className={
+                              voice.inputLevel >= 70
+                                ? 'font-semibold text-red-600'
+                                : voice.inputLevel >= 40
+                                  ? 'font-semibold text-amber-600'
+                                  : voice.inputLevel > 0
+                                    ? 'font-semibold text-green-600'
+                                    : 'font-semibold text-slate-400'
+                            }
+                          >
+                            {voice.inputLevel.toFixed(0)}%
+                          </span>
+                        </div>
+                        <select
+                          className="h-9 w-full rounded border border-slate-200 bg-white px-2 text-sm"
+                          value={voice.selectedDeviceId}
+                          onChange={(e) => voice.setSelectedDeviceId(e.target.value)}
+                        >
+                          {voice.audioDevices.length === 0 && <option value="">Default mic</option>}
+                          {voice.audioDevices.map((device) => (
+                            <option key={device.deviceId} value={device.deviceId}>
+                              {device.label || 'Microphone'}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 md:col-span-2 xl:col-span-1">
+                        <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Practice note</div>
+                        <p className="text-sm leading-6 text-slate-600">
+                          Free mode keeps the visual feedback simple. Assisted mode adds the guided exercise, target note, and follow tracking.
+                        </p>
+                      </div>
                     </div>
-                    <Slider
-                      min={30}
-                      max={244}
-                      step={1}
-                      value={[assisted.assistedConfig.bpm]}
-                      onValueChange={(values) =>
-                        handleAssistedConfigChange({ ...assisted.assistedConfig, bpm: clampBpm(values[0]) })
-                      }
-                    />
-                    <Input
-                      className="h-8 w-24"
-                      type="number"
-                      min={30}
-                      max={244}
-                      value={assisted.assistedConfig.bpm}
-                      onChange={(e) =>
-                        handleAssistedConfigChange({
-                          ...assisted.assistedConfig,
-                          bpm: clampBpm(Number(e.target.value))
-                        })
-                      }
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between text-xs font-medium text-slate-500">
-                      <span>Transpose</span>
-                      <span>
-                        {assisted.assistedConfig.transposeSemitones > 0 ? '+' : ''}
-                        {assisted.assistedConfig.transposeSemitones}
-                      </span>
-                    </div>
-                    <Slider
-                      min={-12}
-                      max={12}
-                      step={1}
-                      value={[assisted.assistedConfig.transposeSemitones]}
-                      onValueChange={(values) =>
-                        handleAssistedConfigChange({
-                          ...assisted.assistedConfig,
-                          transposeSemitones: clampTranspose(values[0])
-                        })
-                      }
-                    />
-                    <div className="text-xs text-slate-500">Range: {assisted.assistedSequence.label}</div>
-                  </div>
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between text-xs font-medium text-slate-500">
-                      <span>Guide Volume</span>
-                      <span>{assisted.assistedConfig.guideVolume}%</span>
-                    </div>
-                    <Slider
-                      min={0}
-                      max={150}
-                      step={1}
-                      value={[assisted.assistedConfig.guideVolume]}
-                      onValueChange={(values) =>
-                        handleAssistedConfigChange({
-                          ...assisted.assistedConfig,
-                          guideVolume: clampGuideVolume(values[0])
-                        })
-                      }
-                    />
-                    <div className="text-xs text-slate-500">Boost the guided piano on phones and smaller speakers.</div>
-                  </div>
-                </div>
-                <div className="mt-3 rounded border border-slate-200 bg-slate-50 p-2 text-xs">
-                  <div className="mb-1 font-medium text-slate-700">
-                    Guide {voice.isActive && practiceMode === 'assisted' ? 'running' : 'stopped'}
-                  </div>
-                  {assisted.assistedSequence.notes.join(' - ')}
-                </div>
-              </div>
-            )}
+
+                    {practiceMode === 'assisted' && (
+                      <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                          <div>
+                            <div className="text-sm font-semibold text-slate-900">Guided practice</div>
+                            <div className="text-xs text-slate-500">
+                              Pick your exercise here, then keep the live screen focused on singing.
+                            </div>
+                          </div>
+                          <div className="flex flex-wrap gap-2 text-xs">
+                            <Badge variant="outline">Range: {assisted.assistedSequence.label}</Badge>
+                            <Badge variant="outline">
+                              Guide: {resumeCountdown !== null ? `Resuming in ${resumeCountdown}` : assisted.isGuidePaused ? 'Paused' : voice.isActive ? 'Running' : 'Stopped'}
+                            </Badge>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+                          <div className="space-y-2">
+                            <div className="text-xs font-medium text-slate-500">Voice profile</div>
+                            <div className="grid grid-cols-2 gap-2">
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant={assisted.assistedConfig.voiceProfile === 'male' ? 'default' : 'outline'}
+                                onClick={() => handleAssistedConfigChange({ ...assisted.assistedConfig, voiceProfile: 'male' })}
+                              >
+                                Male
+                              </Button>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant={assisted.assistedConfig.voiceProfile === 'female' ? 'default' : 'outline'}
+                                onClick={() => handleAssistedConfigChange({ ...assisted.assistedConfig, voiceProfile: 'female' })}
+                              >
+                                Female
+                              </Button>
+                            </div>
+                          </div>
+                          <div className="space-y-2">
+                            <div className="text-xs font-medium text-slate-500">Exercise</div>
+                            <select
+                              className="h-9 w-full rounded border border-slate-200 bg-white px-2 text-sm"
+                              value={assisted.assistedConfig.exerciseId}
+                              onChange={(e) =>
+                                handleAssistedConfigChange({
+                                  ...assisted.assistedConfig,
+                                  exerciseId: e.target.value as AssistedConfig['exerciseId']
+                                })
+                              }
+                            >
+                              {EXERCISE_OPTIONS.map((option) => (
+                                <option key={option.id} value={option.id}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between text-xs font-medium text-slate-500">
+                              <span>Tempo (BPM)</span>
+                              <span>{assisted.assistedConfig.bpm}</span>
+                            </div>
+                            <Slider
+                              min={30}
+                              max={244}
+                              step={1}
+                              value={[assisted.assistedConfig.bpm]}
+                              onValueChange={(values) =>
+                                handleAssistedConfigChange({ ...assisted.assistedConfig, bpm: clampBpm(values[0]) })
+                              }
+                            />
+                            <Input
+                              className="h-8 w-24"
+                              type="number"
+                              min={30}
+                              max={244}
+                              value={assisted.assistedConfig.bpm}
+                              onChange={(e) =>
+                                handleAssistedConfigChange({
+                                  ...assisted.assistedConfig,
+                                  bpm: clampBpm(Number(e.target.value))
+                                })
+                              }
+                            />
+                          </div>
+                        </div>
+
+                        <Accordion type="single" collapsible className="mt-4 rounded-lg border border-slate-200 bg-white px-4">
+                          <AccordionItem value="guided-more" className="border-none">
+                            <AccordionTrigger className="py-3 text-sm hover:no-underline">More guided options</AccordionTrigger>
+                            <AccordionContent className="pb-2">
+                              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                                <div className="space-y-2">
+                                  <div className="flex items-center justify-between text-xs font-medium text-slate-500">
+                                    <span>Transpose</span>
+                                    <span>
+                                      {assisted.assistedConfig.transposeSemitones > 0 ? '+' : ''}
+                                      {assisted.assistedConfig.transposeSemitones}
+                                    </span>
+                                  </div>
+                                  <Slider
+                                    min={-12}
+                                    max={12}
+                                    step={1}
+                                    value={[assisted.assistedConfig.transposeSemitones]}
+                                    onValueChange={(values) =>
+                                      handleAssistedConfigChange({
+                                        ...assisted.assistedConfig,
+                                        transposeSemitones: clampTranspose(values[0])
+                                      })
+                                    }
+                                  />
+                                  <div className="text-xs text-slate-500">Range: {assisted.assistedSequence.label}</div>
+                                </div>
+                                <div className="space-y-2">
+                                  <div className="flex items-center justify-between text-xs font-medium text-slate-500">
+                                    <span>Guide volume</span>
+                                    <span>{assisted.assistedConfig.guideVolume}%</span>
+                                  </div>
+                                  <Slider
+                                    min={0}
+                                    max={150}
+                                    step={1}
+                                    value={[assisted.assistedConfig.guideVolume]}
+                                    onValueChange={(values) =>
+                                      handleAssistedConfigChange({
+                                        ...assisted.assistedConfig,
+                                        guideVolume: clampGuideVolume(values[0])
+                                      })
+                                    }
+                                  />
+                                  <div className="text-xs text-slate-500">Boost the guided piano on phones and smaller speakers.</div>
+                                </div>
+                              </div>
+                              <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-3">
+                                <div>
+                                  <div className="text-xs font-medium text-slate-700">Exercise pattern</div>
+                                  <div className="text-xs text-slate-500">Keep the note pattern tucked away unless you want to inspect it.</div>
+                                </div>
+                                <Button variant="outline" size="sm" onClick={() => setShowExercisePattern((current) => !current)}>
+                                  {showExercisePattern ? 'Hide exercise pattern' : 'Show exercise pattern'}
+                                </Button>
+                              </div>
+                              {showExercisePattern && (
+                                <div className="mt-3 rounded border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
+                                  {assisted.assistedSequence.notes.join(' - ')}
+                                </div>
+                              )}
+                            </AccordionContent>
+                          </AccordionItem>
+                        </Accordion>
+                      </div>
+                    )}
+                  </AccordionContent>
+                </AccordionItem>
+              </Accordion>
+            </div>
           </div>
 
           {(voice.showCalibration || voice.calibrationMessage) && (
@@ -498,12 +663,6 @@ export default function Home() {
               ) : (
                 <div className="text-center text-sm text-slate-600">{voice.calibrationMessage}</div>
               )}
-            </div>
-          )}
-
-          {voice.isActive && !voice.showCalibration && (
-            <div className="mx-auto mb-6 max-w-2xl">
-              <DebugPanel currentRMS={voice.engineState?.rms ?? 0} noiseGate={voice.noiseGate} />
             </div>
           )}
 
@@ -518,6 +677,16 @@ export default function Home() {
                 </div>
                 <div>
                   BPM: <span className="font-semibold">{assisted.assistedConfig.bpm}</span>
+                </div>
+                <div>
+                  Guide:{' '}
+                  <span className="font-semibold text-slate-700">
+                    {resumeCountdown !== null
+                      ? `Resuming in ${resumeCountdown}`
+                      : assisted.isGuidePaused
+                        ? 'Paused'
+                        : 'Running'}
+                  </span>
                 </div>
                 <div>
                   Follow: <span className="font-semibold">{Math.round(assisted.assistedFollowAccuracy * 100)}%</span>
@@ -579,65 +748,51 @@ export default function Home() {
           )}
 
           <div className="mb-6 rounded-xl border border-slate-200 bg-white p-5">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
               <div>
-                <div className="text-lg font-semibold text-slate-900">AI Analysis</div>
+                <div className="text-lg font-semibold text-slate-900">AI analysis</div>
                 <div className="text-sm text-slate-600">
-                  Send the timed session data to AI for a coaching report.
+                  Focus on the latest session first. Older reports stay tucked away until you need them.
                 </div>
               </div>
-              {!voice.isActive && analysis.recentAnalysisArtifacts[0] && !analysis.recentAnalysisArtifacts[0].hasReport && analysis.recentAnalysisArtifacts[0].hasAudio && (
+              {!voice.isActive && latestAnalysisArtifact && !latestAnalysisArtifact.hasReport && latestAnalysisArtifact.hasAudio && (
                 <Button
-                  onClick={() => void confirmAndRunAnalysis(analysis.recentAnalysisArtifacts[0].id)}
+                  onClick={() => void confirmAndRunAnalysis(latestAnalysisArtifact.id)}
                   disabled={isAnalyzing}
                   className="gap-2"
                 >
                   <Send className="h-4 w-4" />
-                  {analysis.analysisBusyId === analysis.recentAnalysisArtifacts[0].id ? 'Processing...' : 'Analyze Latest Session'}
+                  {analysis.analysisBusyId === latestAnalysisArtifact.id ? 'Processing...' : 'Analyze latest session'}
                 </Button>
               )}
             </div>
-            <div className="mt-4 space-y-2">
-              {analysis.recentAnalysisArtifacts.length === 0 ? (
+
+            <div className="mt-4 space-y-3">
+              {!latestAnalysisArtifact ? (
                 <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500">
                   No AI-ready session saved yet. Record a practice session first.
                 </div>
               ) : (
-                analysis.recentAnalysisArtifacts.map((artifact) => (
-                  <div
-                    key={artifact.id}
-                    className="flex flex-col gap-3 rounded-lg border border-slate-200 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
-                  >
-                    <div>
-                      <div className="text-sm font-medium text-slate-800">
-                        {new Date(artifact.timestamp).toLocaleString()}
+                <div className="space-y-2">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Latest session</div>
+                  {renderArtifactCard(latestAnalysisArtifact, true)}
+                </div>
+              )}
+
+              {pastAnalysisArtifacts.length > 0 && (
+                <Accordion type="single" collapsible className="rounded-lg border border-slate-200 bg-slate-50 px-4">
+                  <AccordionItem value="past-analyses" className="border-none">
+                    <AccordionTrigger className="py-3 text-sm hover:no-underline">
+                      <div className="flex items-center gap-3">
+                        <History className="h-4 w-4 text-slate-500" />
+                        <span>Past analyses ({pastAnalysisArtifacts.length})</span>
                       </div>
-                      <div className="text-xs text-slate-500">
-                        {artifact.practiceMode} mode - status: {artifact.analysisStatus}
-                      </div>
-                      {artifact.reportSummary && (
-                        <div className="mt-1 line-clamp-2 text-xs text-slate-600">{artifact.reportSummary}</div>
-                      )}
-                    </div>
-                    <div className="flex gap-2">
-                      {artifact.hasReport ? (
-                        <Button variant="outline" onClick={() => analysis.openAnalysisReport(artifact.id)}>
-                          View report
-                        </Button>
-                      ) : artifact.hasAudio ? (
-                        <Button
-                          variant="outline"
-                          onClick={() => void confirmAndRunAnalysis(artifact.id)}
-                          disabled={isAnalyzing}
-                        >
-                          {analysis.analysisBusyId === artifact.id ? 'Processing...' : 'Analyze with AI'}
-                        </Button>
-                      ) : (
-                        <Badge variant="outline">Audio uploaded and removed</Badge>
-                      )}
-                    </div>
-                  </div>
-                ))
+                    </AccordionTrigger>
+                    <AccordionContent className="space-y-2 pb-4">
+                      {pastAnalysisArtifacts.map((artifact) => renderArtifactCard(artifact))}
+                    </AccordionContent>
+                  </AccordionItem>
+                </Accordion>
               )}
             </div>
           </div>
