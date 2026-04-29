@@ -7,6 +7,9 @@ interface AssistedPianoRollProps {
   targetNoteName?: string;
   detectedNoteName?: string;
   isActive: boolean;
+  followAccuracy?: number;
+  detectedClassName?: string;
+  followClassName?: string;
   historyMs?: number;
 }
 
@@ -22,6 +25,9 @@ export const AssistedPianoRoll = memo(function AssistedPianoRoll({
   targetNoteName,
   detectedNoteName,
   isActive,
+  followAccuracy,
+  detectedClassName = 'text-slate-900',
+  followClassName = 'text-slate-900',
   historyMs = 6000,
 }: AssistedPianoRollProps) {
   const [targetPoints, setTargetPoints] = useState<RollPoint[]>([]);
@@ -74,18 +80,37 @@ export const AssistedPianoRoll = memo(function AssistedPianoRoll({
   }, [latestDetected, latestTarget]);
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+    <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="mb-3 flex items-center justify-between gap-3">
         <div>
-          <div className="text-sm font-semibold text-slate-900">Guided note match</div>
-          <div className="text-xs text-slate-500">Target and detected notes share the same graph so it is easier to compare them at a glance.</div>
+          <div className="text-lg font-semibold text-slate-900">Guided Practice</div>
+          <div className="text-xs text-slate-500">Target vs your note</div>
         </div>
         <div className={`text-xs font-semibold ${isMatched ? 'text-emerald-600' : 'text-slate-500'}`}>
-          {isMatched ? 'Matched now' : 'Keep following the guide'}
+          {isMatched ? 'Matched' : 'Following'}
         </div>
       </div>
 
-      <div className="mb-3 flex flex-wrap gap-4 text-xs text-slate-500">
+      <div className="mb-3 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2">
+        <div className="grid grid-cols-3 gap-3">
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Target</div>
+            <div className="mt-0.5 text-xl font-bold text-slate-900">{targetNoteName ?? '-'}</div>
+          </div>
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">You</div>
+            <div className={`mt-0.5 text-xl font-bold ${detectedClassName}`}>{detectedNoteName ?? '-'}</div>
+          </div>
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Follow</div>
+            <div className={`mt-0.5 text-xl font-bold ${followClassName}`}>
+              {followAccuracy !== undefined ? `${Math.round(followAccuracy * 100)}%` : '-'}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="mb-2 flex flex-wrap gap-4 text-xs text-slate-500">
         <div className="flex items-center gap-2">
           <span className="h-2.5 w-2.5 rounded-full bg-sky-600" />
           <span>Target</span>
@@ -96,7 +121,7 @@ export const AssistedPianoRoll = memo(function AssistedPianoRoll({
         </div>
       </div>
 
-      <svg viewBox="0 0 100 60" className="h-[140px] w-full rounded-xl border border-slate-100 bg-slate-50" preserveAspectRatio="none">
+      <svg viewBox="0 0 100 60" className="h-20 w-full rounded-lg border border-slate-100 bg-slate-50" preserveAspectRatio="none">
         {[10, 20, 30, 40, 50].map((y) => (
           <line
             key={`grid-${y}`}

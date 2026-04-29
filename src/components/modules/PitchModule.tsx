@@ -2,7 +2,7 @@
 
 import { memo, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Music, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, Music } from 'lucide-react';
 import { EngineState } from '@/src/engine/types';
 import { InfoTooltip } from '@/src/components/ui/info-tooltip';
 
@@ -21,7 +21,7 @@ function getDeviationFeedback(cents?: number) {
   if (cents === undefined) {
     return {
       label: 'Listening for pitch',
-      detail: 'Hold a note for a moment and we will show how centered it is.',
+      detail: 'Start singing and your note will appear here.',
       colorClass: 'text-slate-500',
       icon: null as JSX.Element | null
     };
@@ -32,17 +32,17 @@ function getDeviationFeedback(cents?: number) {
 
   if (absCents <= 12) {
     return {
-      label: 'Nicely centered',
-      detail: `${absCents}¢ ${direction} is well within normal vocal variation.`,
+      label: 'Centered',
+      detail: `${absCents} cents ${direction}.`,
       colorClass: 'text-emerald-600',
-      icon: <span className="text-xl">•</span>
+      icon: <Check className="h-5 w-5" />
     };
   }
 
   if (absCents <= 30) {
     return {
       label: 'Very close',
-      detail: `${absCents}¢ ${direction} is just a small adjustment away.`,
+      detail: `${absCents} cents ${direction}.`,
       colorClass: 'text-green-600',
       icon: cents < 0 ? <ChevronLeft className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />
     };
@@ -50,8 +50,8 @@ function getDeviationFeedback(cents?: number) {
 
   if (absCents <= 55) {
     return {
-      label: 'Small natural variation',
-      detail: `${absCents}¢ ${direction}. This is noticeable, but still fairly close.`,
+      label: 'Close',
+      detail: `${absCents} cents ${direction}.`,
       colorClass: 'text-lime-600',
       icon: cents < 0 ? <ChevronLeft className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />
     };
@@ -60,15 +60,15 @@ function getDeviationFeedback(cents?: number) {
   if (absCents <= 80) {
     return {
       label: 'A little off center',
-      detail: `${absCents}¢ ${direction}. A gentle adjustment should settle it.`,
+      detail: `${absCents} cents ${direction}.`,
       colorClass: 'text-amber-600',
       icon: cents < 0 ? <ChevronLeft className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />
     };
   }
 
   return {
-    label: 'Needs a clearer adjustment',
-    detail: `${absCents}¢ ${direction}. Try resetting the note and matching again.`,
+    label: 'Off center',
+    detail: `${absCents} cents ${direction}.`,
     colorClass: 'text-orange-600',
     icon: cents < 0 ? <ChevronLeft className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />
   };
@@ -96,18 +96,18 @@ export const PitchModule = memo(function PitchModule({ state }: PitchModuleProps
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Music className="h-5 w-5" />
-            <CardTitle>Pitch Detection</CardTitle>
+            <CardTitle>Pitch</CardTitle>
           </div>
-          <InfoTooltip text="Shows your current note and how centered it is. Small vocal variations are normal, so use this as a gentle guide rather than a pass/fail meter." />
+          <InfoTooltip text="Shows your current note and how centered it is." />
         </div>
-        <CardDescription>Real-time pitch and note detection with more forgiving feedback</CardDescription>
+        <CardDescription>Current note and pitch center</CardDescription>
       </CardHeader>
       <CardContent>
         <div className="space-y-4">
           <div className="text-center">
             <div className="text-xs text-muted-foreground">Note</div>
             <div className="text-6xl font-bold tabular-nums text-slate-800">
-              {displayPitch?.noteName ?? '—'}
+              {displayPitch?.noteName ?? '-'}
             </div>
           </div>
 
@@ -118,20 +118,20 @@ export const PitchModule = memo(function PitchModule({ state }: PitchModuleProps
             </div>
             <div className="mt-1 text-sm text-slate-600">{deviationFeedback.detail}</div>
             <div className="mt-2 text-xs font-medium uppercase tracking-wide text-slate-500">
-              {displayPitch?.cents !== undefined ? `${displayPitch.cents > 0 ? '+' : ''}${displayPitch.cents}¢` : 'No current deviation'}
+              {displayPitch?.cents !== undefined ? `${displayPitch.cents > 0 ? '+' : ''}${displayPitch.cents} cents` : 'No pitch yet'}
             </div>
           </div>
 
           <div className="flex items-center justify-between text-sm text-muted-foreground">
             <span>Frequency</span>
             <span className="font-medium text-slate-700">
-              {displayPitch?.pitchHz ? `${displayPitch.pitchHz.toFixed(2)} Hz` : '—'}
+              {displayPitch?.pitchHz ? `${displayPitch.pitchHz.toFixed(2)} Hz` : '-'}
             </span>
           </div>
           <div className="flex items-center justify-between text-sm text-muted-foreground">
             <span>Confidence</span>
             <span className="font-medium text-slate-700">
-              {displayPitch?.pitchConfidence !== undefined ? `${(displayPitch.pitchConfidence * 100).toFixed(0)}%` : '—'}
+              {displayPitch?.pitchConfidence !== undefined ? `${Math.max(0, Math.min(100, displayPitch.pitchConfidence * 100)).toFixed(0)}%` : '-'}
             </span>
           </div>
         </div>

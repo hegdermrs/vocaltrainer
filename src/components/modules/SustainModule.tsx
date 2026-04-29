@@ -23,11 +23,11 @@ export const SustainModule = memo(function SustainModule({ state }: SustainModul
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Timer className="h-5 w-5" />
-            <CardTitle>Note Sustain</CardTitle>
+            <CardTitle>Sustain</CardTitle>
           </div>
-          <InfoTooltip text="Measures how long you can hold a steady note. Longer sustain suggests better breath support and control." />
+          <InfoTooltip text="Shows how long your current note is holding." />
         </div>
-        <CardDescription>Track note duration and hold</CardDescription>
+        <CardDescription>Current and best note hold</CardDescription>
       </CardHeader>
       <CardContent>
         <div className="space-y-4">

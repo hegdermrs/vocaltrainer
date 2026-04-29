@@ -12,6 +12,12 @@ interface AirflowModuleProps {
 
 type BreathinessLevel = 'CLEAN' | 'MODERATE' | 'BREATHY';
 
+function formatLevel(level: BreathinessLevel): string {
+  if (level === 'CLEAN') return 'Clean';
+  if (level === 'MODERATE') return 'Moderate';
+  return 'Breathy';
+}
+
 export const AirflowModule = memo(function AirflowModule({ state }: AirflowModuleProps) {
   const breathiness = (state?.breathiness ?? 0) * 100;
   const [windowPeak, setWindowPeak] = useState(0);
@@ -89,15 +95,15 @@ export const AirflowModule = memo(function AirflowModule({ state }: AirflowModul
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Wind className="h-5 w-5" />
-            <CardTitle>Breathiness</CardTitle>
+            <CardTitle>Tone Air</CardTitle>
           </div>
-          <InfoTooltip text="Estimates how airy/noisy your tone is. Lower means cleaner tone; higher means breathier." />
+          <InfoTooltip text="Shows how airy or clean the tone is." />
         </div>
-        <CardDescription>Legacy time-domain breathiness metric</CardDescription>
+        <CardDescription>Clean vs airy tone</CardDescription>
       </CardHeader>
       <CardContent>
         <div className="space-y-4">
-          <div className={`text-center text-5xl font-bold md:text-6xl ${getQualityColorByLevel(displayLevel)}`}>{displayLevel}</div>
+          <div className={`text-center text-5xl font-bold md:text-6xl ${getQualityColorByLevel(displayLevel)}`}>{formatLevel(displayLevel)}</div>
           <div className="rounded-md border border-slate-200 bg-slate-50/70 p-2">
             <svg viewBox={`0 0 ${graphWidth} ${graphHeight}`} className="h-24 w-full" role="img" aria-label="Breathiness live graph">
               <defs>
@@ -115,7 +121,7 @@ export const AirflowModule = memo(function AirflowModule({ state }: AirflowModul
             </svg>
             <div className="mt-1 flex items-center justify-between text-[11px] text-slate-600">
               <span>6s live trend</span>
-              <span>Peak: <span className={getQualityColorByLevel(getLevelFromValue(windowPeak))}>{getLevelFromValue(windowPeak)}</span></span>
+              <span>Peak: <span className={getQualityColorByLevel(getLevelFromValue(windowPeak))}>{formatLevel(getLevelFromValue(windowPeak))}</span></span>
             </div>
           </div>
         </div>

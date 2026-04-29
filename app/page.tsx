@@ -30,112 +30,21 @@ type AnalysisNotice = {
   startedAt?: number;
 };
 
-const secondaryMetricCardClass = 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm';
+function getPitchToneClass(state: EngineState | null): string {
+  if (!state?.noteName || !state.pitchHz || state.cents === undefined) return 'text-slate-500';
 
-type LiveCoachSummary = {
-  eyebrow: string;
-  title: string;
-  detail: string;
-  toneClass: string;
-};
+  const cents = Math.abs(state.cents);
+  if (cents <= 15) return 'text-emerald-600';
+  if (cents <= 35) return 'text-lime-600';
+  if (cents <= 60) return 'text-amber-600';
+  return 'text-orange-600';
+}
 
-function getLiveCoachSummary({
-  state,
-  practiceMode,
-  targetNote,
-  assistedFollowStatus,
-  isGuidePaused,
-}: {
-  state: EngineState | null;
-  practiceMode: 'free' | 'assisted';
-  targetNote?: string | null;
-  assistedFollowStatus?: 'on-target' | 'near' | 'off' | 'no-pitch';
-  isGuidePaused?: boolean;
-}): LiveCoachSummary {
-  if (practiceMode === 'assisted' && isGuidePaused) {
-    return {
-      eyebrow: 'Guided practice paused',
-      title: 'Pick up from the same spot when you are ready',
-      detail: 'Resume when you want to keep going. We will hold your place in the exercise.',
-      toneClass: 'text-slate-700',
-    };
-  }
-
-  if (!state?.noteName || !state.pitchHz) {
-    return {
-      eyebrow: practiceMode === 'assisted' ? `Waiting for a clear note${targetNote ? ` for ${targetNote}` : ''}` : 'Listening for your note',
-      title: 'Give us one steady sung note',
-      detail: practiceMode === 'assisted'
-        ? 'Sing the target note for a moment and we will guide the next adjustment.'
-        : 'Hold a comfortable note and the live coaching card will settle into clear feedback.',
-      toneClass: 'text-slate-700',
-    };
-  }
-
-  if (practiceMode === 'assisted') {
-    if (assistedFollowStatus === 'on-target') {
-      return {
-        eyebrow: targetNote ? `Target note: ${targetNote}` : 'Guided practice',
-        title: 'You are right on it',
-        detail: 'Stay with that same shape and keep the note steady as the guide moves forward.',
-        toneClass: 'text-emerald-600',
-      };
-    }
-
-    if (assistedFollowStatus === 'near') {
-      return {
-        eyebrow: targetNote ? `Target note: ${targetNote}` : 'Guided practice',
-        title: 'Very close to the target',
-        detail: 'A tiny adjustment should lock this one in. Keep listening and stay relaxed.',
-        toneClass: 'text-lime-600',
-      };
-    }
-
-    if (assistedFollowStatus === 'off') {
-      return {
-        eyebrow: targetNote ? `Target note: ${targetNote}` : 'Guided practice',
-        title: 'Reset and match the guide again',
-        detail: 'Aim for the center of the note instead of pushing. A lighter reset will help more than forcing it.',
-        toneClass: 'text-amber-600',
-      };
-    }
-  }
-
-  const cents = Math.abs(state.cents ?? 0);
-
-  if (cents <= 15) {
-    return {
-      eyebrow: 'Live pitch',
-      title: 'Nicely centered',
-      detail: 'You are generally on pitch here. Small movement like this is a normal part of singing.',
-      toneClass: 'text-emerald-600',
-    };
-  }
-
-  if (cents <= 35) {
-    return {
-      eyebrow: 'Live pitch',
-      title: 'Very close',
-      detail: 'You are in a good spot. Just nudge the note gently instead of making a big correction.',
-      toneClass: 'text-lime-600',
-    };
-  }
-
-  if (cents <= 60) {
-    return {
-      eyebrow: 'Live pitch',
-      title: 'A small adjustment will help',
-      detail: 'The note is still close enough to recover easily. Relax and settle into the center.',
-      toneClass: 'text-amber-600',
-    };
-  }
-
-  return {
-    eyebrow: 'Live pitch',
-    title: 'Reset the note gently',
-    detail: 'Try another clean entrance and match the center of the pitch instead of chasing it mid-note.',
-    toneClass: 'text-orange-600',
-  };
+function getAssistedStatusClass(status: 'on-target' | 'near' | 'off' | 'no-pitch'): string {
+  if (status === 'on-target') return 'text-emerald-600';
+  if (status === 'near') return 'text-lime-600';
+  if (status === 'off') return 'text-amber-600';
+  return 'text-slate-500';
 }
 
 export default function Home() {
@@ -228,13 +137,8 @@ export default function Home() {
     return analysisNotice.message;
   }, [analysisNotice, processingCountdown]);
 
-  const liveCoachSummary = useMemo(() => getLiveCoachSummary({
-    state: voice.engineState,
-    practiceMode,
-    targetNote: assisted.assistedTargetNote,
-    assistedFollowStatus: assisted.assistedFollowStatus,
-    isGuidePaused: assisted.isGuidePaused,
-  }), [assisted.assistedFollowStatus, assisted.assistedTargetNote, assisted.isGuidePaused, practiceMode, voice.engineState]);
+  const pitchToneClass = useMemo(() => getPitchToneClass(voice.engineState), [voice.engineState]);
+  const assistedStatusClass = useMemo(() => getAssistedStatusClass(assisted.assistedFollowStatus), [assisted.assistedFollowStatus]);
 
   const openResultsInNewTab = useCallback((sessionId: number) => {
     window.open(`/analysis/${sessionId}`, '_blank', 'noopener,noreferrer');
@@ -783,124 +687,40 @@ export default function Home() {
             </div>
           )}
 
-          <div className="mb-6 grid grid-cols-1 gap-6 lg:grid-cols-2 xl:grid-cols-4">
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Live coaching</div>
-              <h2 className={`mt-3 text-2xl font-semibold tracking-tight ${liveCoachSummary.toneClass}`}>
-                {liveCoachSummary.title}
-              </h2>
-              <p className="mt-3 text-sm leading-6 text-slate-600">{liveCoachSummary.detail}</p>
-            </div>
-
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Current note</div>
-              <div className="mt-3 text-5xl font-bold tracking-tight text-slate-900">
-                {voice.engineState?.noteName ?? '-'}
-              </div>
-              <div className={`mt-3 text-2xl font-semibold ${liveCoachSummary.toneClass}`}>
-                {voice.engineState?.cents !== undefined
-                  ? `${voice.engineState.cents > 0 ? '+' : ''}${voice.engineState.cents}?`
-                  : 'Listening'}
-              </div>
-              <div className="mt-4 space-y-2 text-sm text-slate-600">
-                <div className="flex items-center justify-between gap-3">
-                  <span>Frequency</span>
-                  <span className="font-semibold text-slate-800">
-                    {voice.engineState?.pitchHz ? `${voice.engineState.pitchHz.toFixed(1)} Hz` : '?'}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between gap-3">
-                  <span>Confidence</span>
-                  <span className="font-semibold text-slate-800">
-                    {voice.engineState?.pitchConfidence !== undefined
-                      ? `${Math.max(0, Math.min(100, voice.engineState.pitchConfidence * 100)).toFixed(0)}%`
-                      : '?'}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                {practiceMode === 'assisted' ? 'Guided follow' : 'Session focus'}
-              </div>
-              <div className="mt-3 text-4xl font-bold tracking-tight text-slate-900">
-                {practiceMode === 'assisted'
-                  ? `${Math.round(assisted.assistedFollowAccuracy * 100)}%`
-                  : voice.engineState?.isSustaining
-                    ? 'Hold it'
-                    : 'Stay steady'}
-              </div>
-              <p className="mt-3 text-sm leading-6 text-slate-600">
-                {practiceMode === 'assisted'
-                  ? `Status: ${assisted.assistedFollowStatus}. Match the guide and keep the sound relaxed.`
-                  : 'Keep the note centered first, then make the breath and sustain steadier.'}
-              </p>
-              {practiceMode === 'assisted' && (
-                <div className="mt-4 text-sm text-slate-600">
-                  Target: <span className="font-semibold text-slate-900">{assisted.assistedTargetNote ?? '?'}</span>
-                </div>
-              )}
-            </div>
-
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="mb-1 flex items-center justify-between">
-                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Vocal range</div>
-                <InfoTooltip text="Tracks your lowest and highest notes in this session. Wider range indicates flexibility." />
-              </div>
-              <div className="mt-3 text-4xl font-bold tracking-tight text-slate-900">
-                {voice.engineState?.rangeLowNote ?? '-'}
-                <span className="mx-2 text-slate-400">to</span>
-                {voice.engineState?.rangeHighNote ?? '-'}
-              </div>
-              <div className="mt-4 text-sm text-slate-600">
-                {voice.engineState?.rangeLowHz ? `${voice.engineState.rangeLowHz.toFixed(1)} Hz` : '?'} to{' '}
-                {voice.engineState?.rangeHighHz ? `${voice.engineState.rangeHighHz.toFixed(1)} Hz` : '?'}
-              </div>
-            </div>
-          </div>
-
-          {practiceMode === 'assisted' && (
-            <div className="mb-6">
+          <div className="mb-6 grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
+            {practiceMode === 'assisted' && (
               <AssistedPianoRoll
                 isActive={voice.isActive}
                 targetNoteName={assisted.assistedTargetNote}
                 detectedNoteName={voice.engineState?.noteName}
+                followAccuracy={assisted.assistedFollowAccuracy}
+                detectedClassName={pitchToneClass}
+                followClassName={assistedStatusClass}
               />
-            </div>
-          )}
-
-          <div className="mb-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
-            <div className={secondaryMetricCardClass}>
-              <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Support reminder</div>
-              <div className="mt-3 text-lg font-semibold text-slate-900">What to watch while you sing</div>
-              <ul className="mt-4 space-y-2 text-sm leading-6 text-slate-600">
-                <li>Keep the note centered before making bigger adjustments.</li>
-                <li>Let the breath stay steady instead of pushing for volume.</li>
-                <li>Use the guide as your anchor instead of chasing it mid-note.</li>
-              </ul>
-            </div>
+            )}
+            <PitchModule state={voice.engineState} />
+            <DynamicRangeModule state={voice.engineState} />
             <SustainModule state={voice.engineState} />
             <AirflowModule state={voice.engineState} />
-          </div>
-
-          <div className="mb-6 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-            <Accordion type="single" collapsible>
-              <AccordionItem value="live-details" className="border-none">
-                <AccordionTrigger className="py-0 text-left hover:no-underline">
-                  <div>
-                    <div className="text-sm font-semibold text-slate-900">Detailed live metrics</div>
-                    <div className="text-xs font-normal text-slate-500">Open when you want the extra detail, otherwise keep the screen focused.</div>
-                  </div>
-                </AccordionTrigger>
-                <AccordionContent className="pt-4">
-                  <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-                    <PitchModule state={voice.engineState} />
-                    <DynamicRangeModule state={voice.engineState} />
-                  </div>
-                </AccordionContent>
-              </AccordionItem>
-            </Accordion>
+            <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+              <div className="mb-1 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Mic className="h-5 w-5" />
+                  <div className="text-lg font-semibold">Vocal Range</div>
+                </div>
+                <InfoTooltip text="Tracks your lowest and highest notes in this session." />
+              </div>
+              <div className="mb-4 text-xs text-slate-500">Lowest and highest notes in this session</div>
+              <div className="text-center text-5xl font-bold tracking-tight text-slate-800 sm:text-6xl">
+                {voice.engineState?.rangeLowNote ?? '-'}
+                <span className="mx-2 text-slate-400">to</span>
+                {voice.engineState?.rangeHighNote ?? '-'}
+              </div>
+              <div className="mt-2 text-center text-sm text-slate-500">
+                {voice.engineState?.rangeLowHz ? `${voice.engineState.rangeLowHz.toFixed(1)} Hz` : '-'} to{' '}
+                {voice.engineState?.rangeHighHz ? `${voice.engineState.rangeHighHz.toFixed(1)} Hz` : '-'}
+              </div>
+            </div>
           </div>
 
           <div className="mb-6 rounded-xl border border-slate-200 bg-white p-5">

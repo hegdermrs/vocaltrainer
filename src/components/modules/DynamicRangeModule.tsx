@@ -15,7 +15,7 @@ export const DynamicRangeModule = memo(function DynamicRangeModule({ state }: Dy
   const stdDb = state?.loudnessStdDb;
 
   const label =
-    rangeDb === undefined ? '—' : rangeDb < 6 ? 'Too flat' : rangeDb < 12 ? 'Balanced' : 'Too wide';
+    rangeDb === undefined ? '-' : rangeDb < 6 ? 'Very steady' : rangeDb < 12 ? 'Balanced' : 'Wide';
   const color =
     rangeDb === undefined
       ? 'text-slate-400'
@@ -31,20 +31,20 @@ export const DynamicRangeModule = memo(function DynamicRangeModule({ state }: Dy
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Waves className="h-5 w-5" />
-            <CardTitle>Dynamic Range</CardTitle>
+            <CardTitle>Volume Control</CardTitle>
           </div>
-          <InfoTooltip text="Measures how much your loudness varies while singing. Balanced range usually sounds controlled." />
+          <InfoTooltip text="Shows how much your loudness changes while you sing." />
         </div>
-        <CardDescription>Quiet vs loud span over recent seconds</CardDescription>
+        <CardDescription>Loudness movement in recent seconds</CardDescription>
       </CardHeader>
       <CardContent>
         <div className="space-y-4 text-center">
           <div className={`text-6xl font-bold ${color}`}>{label}</div>
           <div className="text-sm text-muted-foreground">
-            Range: {rangeDb !== undefined ? `${rangeDb.toFixed(1)} dB` : '—'}
+            Range: {rangeDb !== undefined ? `${rangeDb.toFixed(1)} dB` : '-'}
           </div>
           <div className="text-sm text-muted-foreground">
-            Loudness std: {stdDb !== undefined ? `${stdDb.toFixed(1)} dB` : '—'}
+            Stability: {stdDb !== undefined ? `${stdDb.toFixed(1)} dB` : '-'}
           </div>
         </div>
       </CardContent>
