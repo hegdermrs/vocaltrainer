@@ -22,7 +22,7 @@ export const AssistedPianoRoll = memo(function AssistedPianoRoll({
   targetNoteName,
   detectedNoteName,
   isActive,
-  historyMs = 6000
+  historyMs = 6000,
 }: AssistedPianoRollProps) {
   const [targetPoints, setTargetPoints] = useState<RollPoint[]>([]);
   const [detectedPoints, setDetectedPoints] = useState<RollPoint[]>([]);
@@ -39,15 +39,17 @@ export const AssistedPianoRoll = memo(function AssistedPianoRoll({
       setDetectedPoints([]);
       return;
     }
+
     const now = Date.now();
     const targetMidi = targetNoteName ? noteNameToMidi(targetNoteName) : null;
     if (targetMidi !== null) {
       setTargetPoints((prev) => [...prev, { t: now, midi: targetMidi }]);
     }
-  }, [targetNoteName, isActive]);
+  }, [isActive, targetNoteName]);
 
   useEffect(() => {
     if (!isActive) return;
+
     const now = Date.now();
     const detectedMidi = detectedNoteName ? noteNameToMidi(detectedNoteName) : null;
     if (detectedMidi !== null) {
@@ -57,46 +59,62 @@ export const AssistedPianoRoll = memo(function AssistedPianoRoll({
 
   useEffect(() => {
     const cutoff = Date.now() - historyMs;
-    setTargetPoints((prev) => prev.filter((p) => p.t >= cutoff));
-    setDetectedPoints((prev) => prev.filter((p) => p.t >= cutoff));
-  }, [tick, historyMs]);
+    setTargetPoints((prev) => prev.filter((point) => point.t >= cutoff));
+    setDetectedPoints((prev) => prev.filter((point) => point.t >= cutoff));
+  }, [historyMs, tick]);
 
-  const targetPolyline = useMemo(
-    () => toPolyline(targetPoints, historyMs, 0),
-    [targetPoints, historyMs, tick]
-  );
-  const detectedPolyline = useMemo(
-    () => toPolyline(detectedPoints, historyMs, 1),
-    [detectedPoints, historyMs, tick]
-  );
-  const overlap = useMemo(() => {
-    const targetLast = targetPoints[targetPoints.length - 1];
-    const detectedLast = detectedPoints[detectedPoints.length - 1];
-    if (!targetLast || !detectedLast) return false;
-    if (Math.abs(targetLast.t - detectedLast.t) > 250) return false;
-    return Math.abs(targetLast.midi - detectedLast.midi) <= 0;
-  }, [targetPoints, detectedPoints]);
+  const targetPolyline = useMemo(() => toPolyline(targetPoints, historyMs), [historyMs, targetPoints, tick]);
+  const detectedPolyline = useMemo(() => toPolyline(detectedPoints, historyMs), [detectedPoints, historyMs, tick]);
+  const latestTarget = targetPoints[targetPoints.length - 1] ?? null;
+  const latestDetected = detectedPoints[detectedPoints.length - 1] ?? null;
+  const isMatched = useMemo(() => {
+    if (!latestTarget || !latestDetected) return false;
+    if (Math.abs(latestTarget.t - latestDetected.t) > 250) return false;
+    return Math.abs(latestTarget.midi - latestDetected.midi) <= 0.5;
+  }, [latestDetected, latestTarget]);
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-3">
-      <div className="mb-2 flex items-center justify-between text-xs text-slate-500">
-        <span>Assisted Piano Roll</span>
-        <span className={overlap ? 'text-green-600 font-medium' : ''}>{overlap ? 'Matched now' : 'Following'}</span>
+    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <div className="text-sm font-semibold text-slate-900">Guided note match</div>
+          <div className="text-xs text-slate-500">Target and detected notes share the same graph so it is easier to compare them at a glance.</div>
+        </div>
+        <div className={`text-xs font-semibold ${isMatched ? 'text-emerald-600' : 'text-slate-500'}`}>
+          {isMatched ? 'Matched now' : 'Keep following the guide'}
+        </div>
       </div>
-      <svg viewBox="0 0 100 100" className="h-[120px] w-full rounded border border-slate-100 bg-slate-50">
-        <line x1="0" y1="50" x2="100" y2="50" stroke="#cbd5e1" strokeWidth="0.8" strokeDasharray="2 2" />
-        <text x="1" y="6" fontSize="4" fill="#64748b">
-          Target
-        </text>
-        <text x="1" y="56" fontSize="4" fill="#64748b">
-          You
-        </text>
+
+      <div className="mb-3 flex flex-wrap gap-4 text-xs text-slate-500">
+        <div className="flex items-center gap-2">
+          <span className="h-2.5 w-2.5 rounded-full bg-sky-600" />
+          <span>Target</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="h-2.5 w-2.5 rounded-full bg-orange-500" />
+          <span>You</span>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 100 60" className="h-[140px] w-full rounded-xl border border-slate-100 bg-slate-50" preserveAspectRatio="none">
+        {[10, 20, 30, 40, 50].map((y) => (
+          <line
+            key={`grid-${y}`}
+            x1="0"
+            y1={y}
+            x2="100"
+            y2={y}
+            stroke="rgba(148,163,184,0.16)"
+            strokeWidth="0.6"
+            strokeDasharray="2 3"
+          />
+        ))}
         {targetPolyline && (
           <polyline
             points={targetPolyline}
             fill="none"
-            stroke="#2563eb"
-            strokeWidth="1.8"
+            stroke="#0284c7"
+            strokeWidth="1.9"
             strokeLinecap="round"
             strokeLinejoin="round"
           />
@@ -106,31 +124,39 @@ export const AssistedPianoRoll = memo(function AssistedPianoRoll({
             points={detectedPolyline}
             fill="none"
             stroke="#f97316"
-            strokeWidth="1.8"
+            strokeWidth="1.9"
             strokeLinecap="round"
             strokeLinejoin="round"
           />
+        )}
+        {latestTarget && (
+          <circle cx={toX(latestTarget.t, historyMs).toFixed(2)} cy={toY(latestTarget.midi).toFixed(2)} r="1.8" fill="#0284c7" />
+        )}
+        {latestDetected && (
+          <circle cx={toX(latestDetected.t, historyMs).toFixed(2)} cy={toY(latestDetected.midi).toFixed(2)} r="1.8" fill="#f97316" />
         )}
       </svg>
     </div>
   );
 });
 
-function toPolyline(points: RollPoint[], historyMs: number, lane: 0 | 1): string | null {
+function toPolyline(points: RollPoint[], historyMs: number): string | null {
   if (points.length < 2) return null;
   const now = Date.now();
-  const laneTop = lane === 0 ? 4 : 54;
-  const laneHeight = 42;
   const mapped = points
-    .filter((p) => now - p.t <= historyMs)
-    .map((p) => {
-      const age = now - p.t;
-      const x = 100 - (age / historyMs) * 100;
-      const yNorm = (clamp(p.midi, MIN_MIDI, MAX_MIDI) - MIN_MIDI) / (MAX_MIDI - MIN_MIDI);
-      const y = laneTop + (1 - yNorm) * laneHeight;
-      return `${x.toFixed(2)},${y.toFixed(2)}`;
-    });
+    .filter((point) => now - point.t <= historyMs)
+    .map((point) => `${toX(point.t, historyMs).toFixed(2)},${toY(point.midi).toFixed(2)}`);
   return mapped.length >= 2 ? mapped.join(' ') : null;
+}
+
+function toX(timestamp: number, historyMs: number): number {
+  const age = Date.now() - timestamp;
+  return 100 - (age / historyMs) * 100;
+}
+
+function toY(midi: number): number {
+  const normalized = (clamp(midi, MIN_MIDI, MAX_MIDI) - MIN_MIDI) / (MAX_MIDI - MIN_MIDI);
+  return 54 - normalized * 48;
 }
 
 function clamp(value: number, min: number, max: number): number {

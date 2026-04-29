@@ -783,157 +783,124 @@ export default function Home() {
             </div>
           )}
 
-          <div className="mb-6 grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1.5fr)_minmax(320px,1fr)]">
-            <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-              <div className="flex flex-wrap items-start justify-between gap-4">
-                <div>
-                  <div className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">{liveCoachSummary.eyebrow}</div>
-                  <h2 className={`mt-2 text-3xl font-semibold tracking-tight ${liveCoachSummary.toneClass}`}>
-                    {liveCoachSummary.title}
-                  </h2>
-                  <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600">
-                    {liveCoachSummary.detail}
-                  </p>
+          <div className="mb-6 grid grid-cols-1 gap-6 lg:grid-cols-2 xl:grid-cols-4">
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Live coaching</div>
+              <h2 className={`mt-3 text-2xl font-semibold tracking-tight ${liveCoachSummary.toneClass}`}>
+                {liveCoachSummary.title}
+              </h2>
+              <p className="mt-3 text-sm leading-6 text-slate-600">{liveCoachSummary.detail}</p>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Current note</div>
+              <div className="mt-3 text-5xl font-bold tracking-tight text-slate-900">
+                {voice.engineState?.noteName ?? '-'}
+              </div>
+              <div className={`mt-3 text-2xl font-semibold ${liveCoachSummary.toneClass}`}>
+                {voice.engineState?.cents !== undefined
+                  ? `${voice.engineState.cents > 0 ? '+' : ''}${voice.engineState.cents}?`
+                  : 'Listening'}
+              </div>
+              <div className="mt-4 space-y-2 text-sm text-slate-600">
+                <div className="flex items-center justify-between gap-3">
+                  <span>Frequency</span>
+                  <span className="font-semibold text-slate-800">
+                    {voice.engineState?.pitchHz ? `${voice.engineState.pitchHz.toFixed(1)} Hz` : '?'}
+                  </span>
                 </div>
-                <div className="flex flex-wrap gap-2 text-xs">
-                  {practiceMode === 'assisted' && (
-                    <Badge variant="outline" className="capitalize">
-                      {resumeCountdown !== null
-                        ? `Resuming in ${resumeCountdown}`
-                        : assisted.isGuidePaused
-                          ? 'Guide paused'
-                          : voice.isActive
-                            ? 'Guide running'
-                            : 'Guide stopped'}
-                    </Badge>
-                  )}
-                  <Badge variant="outline">{voice.isActive ? 'Live session' : 'Ready to sing'}</Badge>
+                <div className="flex items-center justify-between gap-3">
+                  <span>Confidence</span>
+                  <span className="font-semibold text-slate-800">
+                    {voice.engineState?.pitchConfidence !== undefined
+                      ? `${Math.max(0, Math.min(100, voice.engineState.pitchConfidence * 100)).toFixed(0)}%`
+                      : '?'}
+                  </span>
                 </div>
               </div>
+            </div>
 
-              <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-3">
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 md:col-span-2">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <div className="text-xs font-medium uppercase tracking-wide text-slate-500">Current note</div>
-                      <div className="mt-2 text-6xl font-bold tracking-tight text-slate-900">
-                        {voice.engineState?.noteName ?? '-'}
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-xs font-medium uppercase tracking-wide text-slate-500">Pitch center</div>
-                      <div className={`mt-2 text-3xl font-semibold ${liveCoachSummary.toneClass}`}>
-                        {voice.engineState?.cents !== undefined
-                          ? `${voice.engineState.cents > 0 ? '+' : ''}${voice.engineState.cents}?`
-                          : 'Listening'}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="mt-4 flex flex-wrap gap-4 text-sm text-slate-600">
-                    <div>
-                      Frequency:{' '}
-                      <span className="font-semibold text-slate-800">
-                        {voice.engineState?.pitchHz ? `${voice.engineState.pitchHz.toFixed(1)} Hz` : '?'}
-                      </span>
-                    </div>
-                    <div>
-                      Confidence:{' '}
-                      <span className="font-semibold text-slate-800">
-                        {voice.engineState?.pitchConfidence !== undefined
-                          ? `${Math.max(0, Math.min(100, voice.engineState.pitchConfidence * 100)).toFixed(0)}%`
-                          : '?'}
-                      </span>
-                    </div>
-                    {practiceMode === 'assisted' && (
-                      <div>
-                        Target:{' '}
-                        <span className="font-semibold text-slate-800">{assisted.assistedTargetNote ?? '?'}</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                  <div className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                    {practiceMode === 'assisted' ? 'Guided follow' : 'Session focus'}
-                  </div>
-                  <div className="mt-3 text-3xl font-semibold text-slate-900">
-                    {practiceMode === 'assisted'
-                      ? `${Math.round(assisted.assistedFollowAccuracy * 100)}%`
-                      : voice.engineState?.isSustaining
-                        ? 'Hold it'
-                        : 'Stay steady'}
-                  </div>
-                  <p className="mt-3 text-sm leading-6 text-slate-600">
-                    {practiceMode === 'assisted'
-                      ? `Status: ${assisted.assistedFollowStatus}. Match the guide note and keep the sound relaxed.`
-                      : 'Use this screen as a simple guide: centered pitch first, then steadier breath and sustain.'}
-                  </p>
-                </div>
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                {practiceMode === 'assisted' ? 'Guided follow' : 'Session focus'}
               </div>
-
+              <div className="mt-3 text-4xl font-bold tracking-tight text-slate-900">
+                {practiceMode === 'assisted'
+                  ? `${Math.round(assisted.assistedFollowAccuracy * 100)}%`
+                  : voice.engineState?.isSustaining
+                    ? 'Hold it'
+                    : 'Stay steady'}
+              </div>
+              <p className="mt-3 text-sm leading-6 text-slate-600">
+                {practiceMode === 'assisted'
+                  ? `Status: ${assisted.assistedFollowStatus}. Match the guide and keep the sound relaxed.`
+                  : 'Keep the note centered first, then make the breath and sustain steadier.'}
+              </p>
               {practiceMode === 'assisted' && (
-                <div className="mt-6">
-                  <AssistedPianoRoll
-                    isActive={voice.isActive}
-                    targetNoteName={assisted.assistedTargetNote}
-                    detectedNoteName={voice.engineState?.noteName}
-                  />
+                <div className="mt-4 text-sm text-slate-600">
+                  Target: <span className="font-semibold text-slate-900">{assisted.assistedTargetNote ?? '?'}</span>
                 </div>
               )}
             </div>
 
-            <div className="space-y-4">
-              <div className={secondaryMetricCardClass}>
-                <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Quick support</div>
-                <h3 className="text-lg font-semibold text-slate-900">What to watch while you sing</h3>
-                <ul className="mt-3 space-y-2 text-sm leading-6 text-slate-600">
-                  <li>Keep the note centered before making bigger adjustments.</li>
-                  <li>Let the breath stay steady instead of pushing for volume.</li>
-                  <li>In assisted mode, aim to lock in with the guide rather than chase it.</li>
-                </ul>
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="mb-1 flex items-center justify-between">
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Vocal range</div>
+                <InfoTooltip text="Tracks your lowest and highest notes in this session. Wider range indicates flexibility." />
               </div>
-
-              <div className={secondaryMetricCardClass}>
-                <div className="mb-1 flex items-center justify-between">
-                  <div className="text-sm font-semibold text-slate-900">Vocal range</div>
-                  <InfoTooltip text="Tracks your lowest and highest notes in this session. Wider range indicates flexibility." />
-                </div>
-                <div className="text-xs text-slate-500">Lowest and highest notes from this session</div>
-                <div className="mt-4 text-center text-4xl font-bold tracking-tight text-slate-800">
-                  {voice.engineState?.rangeLowNote ?? '-'}
-                  <span className="mx-2 text-slate-400">to</span>
-                  {voice.engineState?.rangeHighNote ?? '-'}
-                </div>
-                <div className="mt-2 text-center text-sm text-slate-500">
-                  {voice.engineState?.rangeLowHz ? `${voice.engineState.rangeLowHz.toFixed(1)} Hz` : '-'} to{' '}
-                  {voice.engineState?.rangeHighHz ? `${voice.engineState.rangeHighHz.toFixed(1)} Hz` : '-'}
-                </div>
+              <div className="mt-3 text-4xl font-bold tracking-tight text-slate-900">
+                {voice.engineState?.rangeLowNote ?? '-'}
+                <span className="mx-2 text-slate-400">to</span>
+                {voice.engineState?.rangeHighNote ?? '-'}
+              </div>
+              <div className="mt-4 text-sm text-slate-600">
+                {voice.engineState?.rangeLowHz ? `${voice.engineState.rangeLowHz.toFixed(1)} Hz` : '?'} to{' '}
+                {voice.engineState?.rangeHighHz ? `${voice.engineState.rangeHighHz.toFixed(1)} Hz` : '?'}
               </div>
             </div>
           </div>
 
+          {practiceMode === 'assisted' && (
+            <div className="mb-6">
+              <AssistedPianoRoll
+                isActive={voice.isActive}
+                targetNoteName={assisted.assistedTargetNote}
+                detectedNoteName={voice.engineState?.noteName}
+              />
+            </div>
+          )}
+
           <div className="mb-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
+            <div className={secondaryMetricCardClass}>
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Support reminder</div>
+              <div className="mt-3 text-lg font-semibold text-slate-900">What to watch while you sing</div>
+              <ul className="mt-4 space-y-2 text-sm leading-6 text-slate-600">
+                <li>Keep the note centered before making bigger adjustments.</li>
+                <li>Let the breath stay steady instead of pushing for volume.</li>
+                <li>Use the guide as your anchor instead of chasing it mid-note.</li>
+              </ul>
+            </div>
             <SustainModule state={voice.engineState} />
             <AirflowModule state={voice.engineState} />
-            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-              <Accordion type="single" collapsible>
-                <AccordionItem value="live-details" className="border-none">
-                  <AccordionTrigger className="py-0 text-left hover:no-underline">
-                    <div>
-                      <div className="text-sm font-semibold text-slate-900">Detailed live metrics</div>
-                      <div className="text-xs font-normal text-slate-500">Open when you want the extra detail, otherwise keep the screen focused.</div>
-                    </div>
-                  </AccordionTrigger>
-                  <AccordionContent className="pt-4">
-                    <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-                      <PitchModule state={voice.engineState} />
-                      <DynamicRangeModule state={voice.engineState} />
-                    </div>
-                  </AccordionContent>
-                </AccordionItem>
-              </Accordion>
-            </div>
+          </div>
+
+          <div className="mb-6 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <Accordion type="single" collapsible>
+              <AccordionItem value="live-details" className="border-none">
+                <AccordionTrigger className="py-0 text-left hover:no-underline">
+                  <div>
+                    <div className="text-sm font-semibold text-slate-900">Detailed live metrics</div>
+                    <div className="text-xs font-normal text-slate-500">Open when you want the extra detail, otherwise keep the screen focused.</div>
+                  </div>
+                </AccordionTrigger>
+                <AccordionContent className="pt-4">
+                  <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                    <PitchModule state={voice.engineState} />
+                    <DynamicRangeModule state={voice.engineState} />
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
+            </Accordion>
           </div>
 
           <div className="mb-6 rounded-xl border border-slate-200 bg-white p-5">
