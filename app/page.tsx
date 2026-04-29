@@ -5,9 +5,10 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/
 import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Slider } from '@/components/ui/slider';
-import { History, Mic, MicOff, Pause, Play, Send, Settings2, Square, Timer } from 'lucide-react';
+import { HelpCircle, History, Mic, MicOff, Pause, Play, Send, Settings2, Square, Timer } from 'lucide-react';
 import { PitchModule } from '@/src/components/modules/PitchModule';
 import { DynamicRangeModule } from '@/src/components/modules/DynamicRangeModule';
 import { AirflowModule } from '@/src/components/modules/AirflowModule';
@@ -335,6 +336,45 @@ export default function Home() {
         </AlertDialogContent>
       </AlertDialog>
       <div className="min-h-screen bg-gradient-to-b from-slate-50 to-slate-100">
+      <nav className="sticky top-0 z-40 border-b border-slate-200 bg-white/90 backdrop-blur">
+        <div className="container mx-auto flex h-14 items-center justify-between px-4">
+          <div className="text-sm font-semibold text-slate-900">Voice Trainer</div>
+          <Dialog>
+            <DialogTrigger asChild>
+              <Button variant="outline" size="sm" className="gap-2">
+                <HelpCircle className="h-4 w-4" />
+                How to use
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-xl">
+              <DialogHeader>
+                <DialogTitle>How to use Voice Trainer</DialogTitle>
+                <DialogDescription>
+                  A quick flow for a clean practice session.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="grid gap-3 text-sm text-slate-700">
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                  <div className="font-semibold text-slate-900">1. Choose a mode</div>
+                  <div className="mt-1">Use Free Practice for open singing, or Assisted Practice to match the guide.</div>
+                </div>
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                  <div className="font-semibold text-slate-900">2. Start practice</div>
+                  <div className="mt-1">Allow microphone access, sing normally, and watch the live cards update.</div>
+                </div>
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                  <div className="font-semibold text-slate-900">3. Read the cards</div>
+                  <div className="mt-1">Pitch shows note center, Sustain tracks hold time, Tone Air shows clean vs airy tone, and Volume Control shows loudness movement.</div>
+                </div>
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                  <div className="font-semibold text-slate-900">4. Review with AI</div>
+                  <div className="mt-1">Stop and analyze when you want a saved report with feedback and recommended lessons.</div>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+        </div>
+      </nav>
       <div className="container mx-auto px-4 py-8 pb-36">
         <div className="mx-auto max-w-7xl">
           <div className="mb-8 text-center">
