@@ -86,6 +86,35 @@ function isValidVideoUrl(url: unknown): url is string {
   return typeof url === 'string' && url.startsWith('http');
 }
 
+function normalizeDropboxVideoUrl(url: string): string {
+  try {
+    const parsedUrl = new URL(url);
+    const hostname = parsedUrl.hostname.toLowerCase();
+    const isDropboxShareUrl = hostname === 'dropbox.com' || hostname.endsWith('.dropbox.com');
+
+    if (isDropboxShareUrl && hostname !== 'dl.dropboxusercontent.com') {
+      parsedUrl.searchParams.delete('dl');
+      parsedUrl.searchParams.set('raw', '1');
+    }
+
+    return parsedUrl.toString();
+  } catch {
+    return url;
+  }
+}
+
+function getLessonVideoUrl(lesson: { video_url?: string; dropbox_url?: string } | null | undefined): string | null {
+  if (!lesson) return null;
+
+  const sourceUrl = isValidVideoUrl(lesson.video_url)
+    ? lesson.video_url
+    : isValidVideoUrl(lesson.dropbox_url)
+      ? lesson.dropbox_url
+      : null;
+
+  return sourceUrl ? normalizeDropboxVideoUrl(sourceUrl) : null;
+}
+
 function getVideoMimeType(url: string, fallbackPath?: string): string | undefined {
   const source = `${url} ${fallbackPath ?? ''}`.toLowerCase();
 
@@ -422,9 +451,7 @@ export default function AnalysisPage() {
                           <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Recommended lessons</h4>
                           <div className="mt-3 space-y-3">
                             {lessons.map((lesson, lessonIndex) => {
-                              const videoUrl = isValidVideoUrl(lesson?.video_url)
-                                ? lesson.video_url
-                                : null;
+                              const videoUrl = getLessonVideoUrl(lesson);
 
                               return (
                                 <div key={`${improvementIndex}-${lessonIndex}`} className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
