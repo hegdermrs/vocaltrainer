@@ -19,7 +19,7 @@ function getPitchAccuracyCredit(cents: number): number {
 }
 
 import {
-  PracticeSessionPayload,
+  PracticeKeyContext,
   PracticeTelemetryFrame,
   PracticeTelemetrySession,
   SessionArtifact
@@ -31,6 +31,7 @@ import { finalizePracticeSessionArtifact } from '@/src/analysis/sessionArtifact'
 interface UseVoiceSessionOptions {
   practiceMode: 'free' | 'assisted';
   assistedConfig: AssistedConfig;
+  freePracticeKeyContext?: PracticeKeyContext;
   applyAssistedState: (state: EngineState, enabled: boolean) => EngineState;
   commitAssistedUi: () => void;
   resetAssistedSession: () => void;
@@ -43,6 +44,7 @@ interface UseVoiceSessionOptions {
 export function useVoiceSession({
   practiceMode,
   assistedConfig,
+  freePracticeKeyContext,
   applyAssistedState,
   commitAssistedUi,
   resetAssistedSession,
@@ -405,6 +407,7 @@ export function useVoiceSession({
       timestamp: summary.timestamp,
       preset: String(preset),
       practiceMode,
+      keyContext: practiceMode === 'free' ? freePracticeKeyContext : undefined,
       assistedConfig: practiceMode === 'assisted' ? assistedConfig : undefined,
       summary,
       metrics: telemetrySession,
@@ -450,6 +453,7 @@ export function useVoiceSession({
     assistedConfig,
     clearAssistedUi,
     engineState,
+    freePracticeKeyContext,
     persistArtifact,
     practiceMode,
     preset,

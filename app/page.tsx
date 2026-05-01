@@ -22,6 +22,7 @@ import { useSessionAnalysis } from '@/src/hooks/useSessionAnalysis';
 import { useVoiceSession } from '@/src/hooks/useVoiceSession';
 import { AssistedConfig, EXERCISE_OPTIONS, clampBpm, clampGuideVolume, clampTranspose } from '@/src/engine/assistedPractice';
 import { applyPreset, EnginePreset, getAvailablePresets } from '@/src/engine/engineSettings';
+import { PracticeKeyContext } from '@/src/analysis/types';
 import { EngineState } from '@/src/engine/types';
 
 type AnalysisNotice = {
@@ -48,8 +49,30 @@ function getAssistedStatusClass(status: 'on-target' | 'near' | 'off' | 'no-pitch
   return 'text-slate-500';
 }
 
+const KEY_OPTIONS = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'] as const;
+const DEFAULT_FREE_PRACTICE_KEY_CONTEXT: PracticeKeyContext = {
+  enabled: false,
+  root: 'C',
+  scale: 'major'
+};
+
 export default function Home() {
   const [practiceMode, setPracticeMode] = useState<'free' | 'assisted'>('free');
+  const [freePracticeKeyContext, setFreePracticeKeyContext] = useState<PracticeKeyContext>(() => {
+    if (typeof window === 'undefined') return DEFAULT_FREE_PRACTICE_KEY_CONTEXT;
+    try {
+      const raw = window.localStorage.getItem('voice-trainer-free-practice-key');
+      if (!raw) return DEFAULT_FREE_PRACTICE_KEY_CONTEXT;
+      const parsed = JSON.parse(raw) as Partial<PracticeKeyContext>;
+      return {
+        enabled: Boolean(parsed.enabled),
+        root: typeof parsed.root === 'string' && KEY_OPTIONS.includes(parsed.root as (typeof KEY_OPTIONS)[number]) ? parsed.root : 'C',
+        scale: parsed.scale === 'minor' ? 'minor' : 'major'
+      };
+    } catch {
+      return DEFAULT_FREE_PRACTICE_KEY_CONTEXT;
+    }
+  });
   const [analysisNotice, setAnalysisNotice] = useState<AnalysisNotice | null>(null);
   const [pendingAnalysisId, setPendingAnalysisId] = useState<number | null>(null);
   const [resumeCountdown, setResumeCountdown] = useState<number | null>(null);
@@ -59,6 +82,7 @@ export default function Home() {
   const voice = useVoiceSession({
     practiceMode,
     assistedConfig: assisted.assistedConfig,
+    freePracticeKeyContext,
     applyAssistedState: assisted.applyAssistedState,
     commitAssistedUi: assisted.commitFollowUi,
     resetAssistedSession: assisted.resetSessionTracking,
@@ -67,6 +91,14 @@ export default function Home() {
     stopGuide: assisted.stopGuide,
     persistArtifact: analysis.persistArtifact
   });
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem('voice-trainer-free-practice-key', JSON.stringify(freePracticeKeyContext));
+    } catch {
+      // ignore persistence issues
+    }
+  }, [freePracticeKeyContext]);
 
   const isAnalyzing = analysis.analysisBusyId !== null;
   const analysisDialogOpen = pendingAnalysisId !== null || analysisNotice !== null;
@@ -550,10 +582,82 @@ export default function Home() {
                       </div>
 
                       <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 md:col-span-2 xl:col-span-1">
-                        <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Practice note</div>
-                        <p className="text-sm leading-6 text-slate-600">
-                          Free mode keeps the visual feedback simple. Assisted mode adds the guided exercise, target note, and follow tracking.
-                        </p>
+                        <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                          {practiceMode === 'free' ? 'Key lock' : 'Practice note'}
+                        </div>
+                        {practiceMode === 'free' ? (
+                          <div className="space-y-3">
+                            <label className="flex items-start gap-3 text-sm text-slate-700">
+                              <input
+                                type="checkbox"
+                                className="mt-1 h-4 w-4 rounded border-slate-300"
+                                checked={freePracticeKeyContext.enabled}
+                                onChange={(e) =>
+                                  setFreePracticeKeyContext((current) => ({
+                                    ...current,
+                                    enabled: e.target.checked
+                                  }))
+                                }
+                              />
+                              <span>
+                                <span className="block font-medium text-slate-900">Lock free-practice analysis to a song key</span>
+                                <span className="block text-xs text-slate-500">
+                                  This keeps the AI feedback aware of your selected major or minor key, so it can tell the difference between small pitch drift and truly out-of-key notes.
+                                </span>
+                              </span>
+                            </label>
+
+                            <div className="grid grid-cols-2 gap-3">
+                              <div>
+                                <label className="mb-1 block text-xs font-medium text-slate-600">Key</label>
+                                <select
+                                  className="h-9 w-full rounded border border-slate-200 bg-white px-2 text-sm"
+                                  value={freePracticeKeyContext.root}
+                                  onChange={(e) =>
+                                    setFreePracticeKeyContext((current) => ({
+                                      ...current,
+                                      root: e.target.value
+                                    }))
+                                  }
+                                  disabled={!freePracticeKeyContext.enabled}
+                                >
+                                  {KEY_OPTIONS.map((keyOption) => (
+                                    <option key={keyOption} value={keyOption}>
+                                      {keyOption}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                              <div>
+                                <label className="mb-1 block text-xs font-medium text-slate-600">Scale</label>
+                                <select
+                                  className="h-9 w-full rounded border border-slate-200 bg-white px-2 text-sm"
+                                  value={freePracticeKeyContext.scale}
+                                  onChange={(e) =>
+                                    setFreePracticeKeyContext((current) => ({
+                                      ...current,
+                                      scale: e.target.value === 'minor' ? 'minor' : 'major'
+                                    }))
+                                  }
+                                  disabled={!freePracticeKeyContext.enabled}
+                                >
+                                  <option value="major">Major</option>
+                                  <option value="minor">Minor</option>
+                                </select>
+                              </div>
+                            </div>
+
+                            <div className="text-xs text-slate-500">
+                              {freePracticeKeyContext.enabled
+                                ? `AI feedback will treat ${freePracticeKeyContext.root} ${freePracticeKeyContext.scale} as your song context.`
+                                : 'Turn this on when you want the AI to judge your free practice against a specific key.'}
+                            </div>
+                          </div>
+                        ) : (
+                          <p className="text-sm leading-6 text-slate-600">
+                            Free mode keeps the visual feedback simple. Assisted mode adds the guided exercise, target note, and follow tracking.
+                          </p>
+                        )}
                       </div>
                     </div>
 

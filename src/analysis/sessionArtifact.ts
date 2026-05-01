@@ -1,5 +1,8 @@
 ﻿import {
   PracticeEvidenceMoment,
+  PracticeKeyAnalysis,
+  PracticeKeyContext,
+  PracticeKeyMoment,
   PracticeSegmentSummary,
   PracticeSessionPayload,
   PracticeSessionSummary,
@@ -15,6 +18,7 @@ interface FinalizePracticeSessionParams {
   timestamp: string;
   preset: string;
   practiceMode: 'free' | 'assisted';
+  keyContext?: PracticeKeyContext;
   assistedConfig?: AssistedConfig;
   summary: PracticeSessionSummary;
   metrics: PracticeTelemetrySession;
@@ -27,6 +31,29 @@ const SEGMENT_TARGET_COUNT = 24;
 const MIN_SEGMENT_MS = 15000;
 const EVIDENCE_LIMIT = 14;
 const SESSION_SCHEMA_VERSION = 2;
+const KEY_ANALYSIS_CONFIDENCE_THRESHOLD = 0.75;
+const KEY_MOMENT_LIMIT = 10;
+const NOTE_PITCH_CLASS: Record<string, number> = {
+  C: 0,
+  'C#': 1,
+  Db: 1,
+  D: 2,
+  'D#': 3,
+  Eb: 3,
+  E: 4,
+  F: 5,
+  'F#': 6,
+  Gb: 6,
+  G: 7,
+  'G#': 8,
+  Ab: 8,
+  A: 9,
+  'A#': 10,
+  Bb: 10,
+  B: 11
+};
+const MAJOR_SCALE_INTERVALS = [0, 2, 4, 5, 7, 9, 11];
+const MINOR_SCALE_INTERVALS = [0, 2, 3, 5, 7, 8, 10];
 
 function roundNumber(value: number | undefined, decimals = 4): number | undefined {
   if (value === undefined || !Number.isFinite(value)) return undefined;
@@ -44,6 +71,7 @@ function compactFrame(frame: PracticeTelemetryFrame): PracticeTelemetryFrame {
     pitchConfidence: roundNumber(frame.pitchConfidence, 4),
     cents: roundNumber(frame.cents, 2),
     noteName: frame.noteName,
+    inKey: frame.inKey,
     breathiness: roundNumber(frame.breathiness, 3),
     volumeConsistency: roundNumber(frame.volumeConsistency, 3),
     rangeLowHz: roundNumber(frame.rangeLowHz, 3),
@@ -60,6 +88,44 @@ function compactFrame(frame: PracticeTelemetryFrame): PracticeTelemetryFrame {
     assistedScale: frame.assistedScale,
     assistedTranspose: frame.assistedTranspose
   };
+}
+
+function noteNameToPitchClass(noteName: string | undefined): number | null {
+  if (!noteName) return null;
+  const match = noteName.match(/^([A-G])([#b]?)(-?\d+)$/);
+  if (!match) return null;
+  const [, note, accidental] = match;
+  return NOTE_PITCH_CLASS[`${note}${accidental}`] ?? null;
+}
+
+function getAllowedPitchClasses(keyContext: PracticeKeyContext | undefined): Set<number> | null {
+  if (!keyContext?.enabled) return null;
+  const rootPitchClass = NOTE_PITCH_CLASS[keyContext.root];
+  if (rootPitchClass === undefined) return null;
+  const intervals = keyContext.scale === 'minor' ? MINOR_SCALE_INTERVALS : MAJOR_SCALE_INTERVALS;
+  return new Set(intervals.map((interval) => (rootPitchClass + interval) % 12));
+}
+
+function annotateFramesWithKeyContext(
+  frames: PracticeTelemetryFrame[],
+  keyContext: PracticeKeyContext | undefined
+): PracticeTelemetryFrame[] {
+  const allowedPitchClasses = getAllowedPitchClasses(keyContext);
+  if (!allowedPitchClasses) return frames;
+
+  return frames.map((frame) => {
+    const pitchClass = noteNameToPitchClass(frame.noteName);
+    const isConfidentPitchFrame =
+      frame.pitchDetected &&
+      typeof frame.noteName === 'string' &&
+      typeof frame.pitchConfidence === 'number' &&
+      frame.pitchConfidence >= KEY_ANALYSIS_CONFIDENCE_THRESHOLD;
+
+    return {
+      ...frame,
+      inKey: isConfidentPitchFrame && pitchClass !== null ? allowedPitchClasses.has(pitchClass) : undefined
+    };
+  });
 }
 
 function normalizeFrames(frames: PracticeTelemetryFrame[]): PracticeTelemetryFrame[] {
@@ -149,6 +215,68 @@ function topNotes(frames: PracticeTelemetryFrame[]): string[] {
     .sort((a, b) => b[1] - a[1])
     .slice(0, 3)
     .map(([note]) => note);
+}
+
+function topNotesFromFrames(frames: PracticeTelemetryFrame[], limit = 3): string[] {
+  const counts = new Map<string, number>();
+  for (const frame of frames) {
+    if (!frame.noteName) continue;
+    counts.set(frame.noteName, (counts.get(frame.noteName) ?? 0) + 1);
+  }
+
+  return Array.from(counts.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, limit)
+    .map(([note]) => note);
+}
+
+function buildKeyAnalysis(
+  frames: PracticeTelemetryFrame[],
+  keyContext: PracticeKeyContext | undefined
+): PracticeKeyAnalysis | undefined {
+  if (!keyContext?.enabled) return undefined;
+
+  const analyzableFrames = frames.filter(
+    (frame) =>
+      frame.pitchDetected &&
+      typeof frame.noteName === 'string' &&
+      typeof frame.pitchConfidence === 'number' &&
+      frame.pitchConfidence >= KEY_ANALYSIS_CONFIDENCE_THRESHOLD
+  );
+
+  if (!analyzableFrames.length) {
+    return {
+      inKeyRatio: 0,
+      outOfKeyFrameCount: 0,
+      mostCommonInKeyNotes: [],
+      mostCommonOutOfKeyNotes: [],
+      outOfKeyMoments: []
+    };
+  }
+
+  const inKeyFrames = analyzableFrames.filter((frame) => frame.inKey === true);
+  const outOfKeyFrames = analyzableFrames.filter((frame) => frame.inKey === false);
+
+  const outOfKeyMoments: PracticeKeyMoment[] = [];
+  for (const frame of outOfKeyFrames) {
+    const timestampSeconds = roundNumber(frame.t / 1000, 2) ?? 0;
+    const isNearExisting = outOfKeyMoments.some((moment) => Math.abs(moment.timestampSeconds - timestampSeconds) < 8);
+    if (isNearExisting) continue;
+    outOfKeyMoments.push({
+      timestampSeconds,
+      noteName: frame.noteName ?? 'Unknown note',
+      reason: `Outside selected ${keyContext.root} ${keyContext.scale} key`
+    });
+    if (outOfKeyMoments.length >= KEY_MOMENT_LIMIT) break;
+  }
+
+  return {
+    inKeyRatio: roundNumber(inKeyFrames.length / analyzableFrames.length, 3) ?? 0,
+    outOfKeyFrameCount: outOfKeyFrames.length,
+    mostCommonInKeyNotes: topNotesFromFrames(inKeyFrames),
+    mostCommonOutOfKeyNotes: topNotesFromFrames(outOfKeyFrames),
+    outOfKeyMoments
+  };
 }
 
 function formatSegmentLabel(startSeconds: number, endSeconds: number): string {
@@ -312,6 +440,7 @@ function buildPayload(
   options?: {
     segmentSummaries?: PracticeSegmentSummary[];
     evidenceMoments?: PracticeEvidenceMoment[];
+    keyAnalysis?: PracticeKeyAnalysis;
   }
 ): PracticeSessionPayload {
   const frameCount = frames.length;
@@ -332,6 +461,8 @@ function buildPayload(
     timestamp: params.timestamp,
     preset: params.preset,
     practiceMode: params.practiceMode,
+    keyContext: params.practiceMode === 'free' ? params.keyContext : undefined,
+    keyAnalysis: params.practiceMode === 'free' ? options?.keyAnalysis : undefined,
     assistedConfig: params.practiceMode === 'assisted' ? params.assistedConfig : undefined,
     summary: params.summary,
     metrics: params.metrics,
@@ -369,15 +500,19 @@ function validateArtifact(payload: PracticeSessionPayload): { readyForAnalysis: 
 }
 
 export function finalizePracticeSessionArtifact(params: FinalizePracticeSessionParams): SessionArtifact {
-  const normalizedFrames = normalizeFrames(params.frames);
+  const normalizedFrames = annotateFramesWithKeyContext(normalizeFrames(params.frames), params.keyContext);
   const aiFrames = buildAiFrames(normalizedFrames, AI_FRAME_LIMIT);
   const segmentSummaries = buildSegmentSummaries(normalizedFrames, params.metrics.durationSeconds);
   const evidenceMoments = buildEvidenceMoments(normalizedFrames, params.metrics.durationSeconds, params.practiceMode);
+  const keyAnalysis = buildKeyAnalysis(normalizedFrames, params.keyContext);
 
-  const payload = buildPayload(params, normalizedFrames, aiFrames.length);
+  const payload = buildPayload(params, normalizedFrames, aiFrames.length, {
+    keyAnalysis
+  });
   const aiPayload = buildPayload(params, aiFrames, aiFrames.length, {
     segmentSummaries,
-    evidenceMoments
+    evidenceMoments,
+    keyAnalysis
   });
   const validation = validateArtifact(aiPayload);
 

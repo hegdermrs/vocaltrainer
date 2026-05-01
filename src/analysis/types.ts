@@ -25,6 +25,7 @@ export interface PracticeTelemetryFrame {
   pitchConfidence?: number;
   cents?: number;
   noteName?: string;
+  inKey?: boolean;
   breathiness?: number;
   volumeConsistency?: number;
   rangeLowHz?: number;
@@ -98,11 +99,33 @@ export interface PracticeEvidenceMoment {
   severity: 'low' | 'medium' | 'high';
 }
 
+export interface PracticeKeyContext {
+  enabled: boolean;
+  root: string;
+  scale: 'major' | 'minor';
+}
+
+export interface PracticeKeyMoment {
+  timestampSeconds: number;
+  noteName: string;
+  reason: string;
+}
+
+export interface PracticeKeyAnalysis {
+  inKeyRatio: number;
+  outOfKeyFrameCount: number;
+  mostCommonInKeyNotes: string[];
+  mostCommonOutOfKeyNotes: string[];
+  outOfKeyMoments: PracticeKeyMoment[];
+}
+
 export interface PracticeSessionPayload {
   id: number;
   timestamp: string;
   preset: string;
   practiceMode: 'free' | 'assisted';
+  keyContext?: PracticeKeyContext;
+  keyAnalysis?: PracticeKeyAnalysis;
   assistedConfig?: {
     voiceProfile: 'male' | 'female';
     bpm: number;
